@@ -40,25 +40,25 @@ jobs:
         working-directory: config/plymouth/dmj-cinematic
         run: python3 generate_assets.py
 
-      -- name: Stage Saudade checkpoint into build assets
-  run: |
-    mkdir -p dmj-ai-assets
+      - name: Stage Saudade checkpoint into build assets
+       run: |
+           mkdir -p dmj-ai-assets
 
-    # Copy Saudade checkpoint only if it exists
-    if [ -f "path/to/your/saudade_v4.pt" ]; then
-      cp path/to/your/saudade_v4.pt dmj-ai-assets/saudade_v4.pt
-      echo "Saudade checkpoint copied."
-    else
-      echo "Saudade checkpoint not found — skipping."
-    fi
+           # Copy Saudade checkpoint only if it exists
+           if [ -f "path/to/your/saudade_v4.pt" ]; then
+             cp path/to/your/saudade_v4.pt dmj-ai-assets/saudade_v4.pt
+              echo "Saudade checkpoint copied."
+            else
+              echo "Saudade checkpoint not found — skipping."
+           fi
 
-    # Copy tokenizer only if it exists
-    if [ -f "path/to/your/tokenizer_32k.json" ]; then
-      cp path/to/your/tokenizer_32k.json dmj-ai-assets/tokenizer_32k.json
-      echo "Tokenizer copied."
-    else
-      echo "Tokenizer not found — skipping."
-    fi
+           # Copy tokenizer only if it exists
+           if [ -f "path/to/your/tokenizer_32k.json" ]; then
+             cp path/to/your/tokenizer_32k.json dmj-ai-assets/tokenizer_32k.json
+            echo "Tokenizer copied."
+           else
+             echo "Tokenizer not found — skipping."
+           fi
 
       - name: Set release codename
         if: github.event_name == 'workflow_dispatch'
