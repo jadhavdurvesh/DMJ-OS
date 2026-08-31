@@ -27,16 +27,37 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install build tools
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            git \
+            make \
             debootstrap \
-            live-build \
             debian-archive-keyring \
             xorriso \
             isolinux \
-            syslinux-common
+            syslinux-common \
+            wget \
+            rsync \
+            cpio \
+            bzip2 \
+            xz-utils \
+            gzip
+
+      - name: Install current Debian Live build tools
+        run: |
+          set -euxo pipefail
+
+          git clone --depth 1 https://salsa.debian.org/live-team/live-build.git /tmp/live-build
+          cd /tmp/live-build
+          sudo make install
+
+          export PATH="/usr/local/bin:$PATH"
+          hash -r
+
+          echo "Using live-build from: $(command -v lb)"
+          lb --version
 
       - name: Set release codename
         if: github.event_name == 'workflow_dispatch'
@@ -47,11 +68,16 @@ jobs:
 
       - name: Run DMJ OS build
         run: |
+          set -euxo pipefail
+          export PATH="/usr/local/bin:$PATH"
+
           echo "Checking build directory..."
           ls -la ./build/
+          echo "Using live-build from: $(command -v lb)"
+          lb --version
 
           chmod +x ./build/build-dmj-os.sh
-          sudo bash ./build/build-dmj-os.sh
+          sudo env PATH="$PATH" bash ./build/build-dmj-os.sh
 
       - name: Check ISO output
         run: |
