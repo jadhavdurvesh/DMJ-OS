@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 #
 # build-dmj-os.sh
-# Builds a bootable DMJ OS ISO (Debian 12 / Bookworm).
-# This GitHub Actions build intentionally contains only the base DMJ OS.
-# Optional Saudade AI model files and custom Plymouth assets are skipped so
-# the ISO can be built directly from this repository without large uploads.
+# Builds a bootable DMJ OS ISO based on Debian 12 (Bookworm).
+# This repository build intentionally skips the large Saudade AI files and
+# custom Plymouth assets so it can build directly in GitHub Actions.
 
 set -euo pipefail
 
@@ -22,10 +21,9 @@ WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LB_DIR="${WORKDIR}/live-build-work"
 OUT_DIR="${WORKDIR}/out"
 
-# Debian mirrors. These are explicit because GitHub Actions runs on Ubuntu,
-# while the ISO itself is based on Debian Bookworm.
+# Use the official Debian mirror explicitly. The installed live-build version
+# on the GitHub runner does not support the newer *-security mirror flags.
 DEBIAN_MIRROR="http://deb.debian.org/debian/"
-DEBIAN_SECURITY_MIRROR="http://security.debian.org/debian-security/"
 
 # ---------------------------------------------------------------------------
 # 0. Sanity checks
@@ -46,7 +44,7 @@ mkdir -p "$LB_DIR" "$OUT_DIR"
 cd "$LB_DIR"
 
 # ---------------------------------------------------------------------------
-# 1. Start from a clean live-build workspace
+# 1. Start from a completely clean live-build workspace
 # ---------------------------------------------------------------------------
 echo "==> Cleaning previous live-build workspace"
 rm -rf config auto local .build cache binary chroot tmp
@@ -62,10 +60,6 @@ lb config \
   --mirror-bootstrap "$DEBIAN_MIRROR" \
   --mirror-chroot "$DEBIAN_MIRROR" \
   --mirror-binary "$DEBIAN_MIRROR" \
-  --mirror-bootstrap-security "$DEBIAN_SECURITY_MIRROR" \
-  --mirror-chroot-security "$DEBIAN_SECURITY_MIRROR" \
-  --mirror-binary-security "$DEBIAN_SECURITY_MIRROR" \
-  --security true \
   --archive-areas "main contrib non-free non-free-firmware" \
   --debian-installer live \
   --bootappend-live "boot=live components quiet splash" \
