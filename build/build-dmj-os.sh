@@ -43,12 +43,25 @@ mkdir -p "$LB_DIR" "$OUT_DIR"
 cd "$LB_DIR"
 
 # ---------------------------------------------------------------------------
-# 1. Initialize live-build config
+# 1. Clean old live-build configuration
 # ---------------------------------------------------------------------------
-echo "==> Configuring live-build"
+# These directories are generated inside live-build-work. Removing them here
+# does NOT remove the repository's source config directory at $WORKDIR/config.
+echo "==> Cleaning previous live-build configuration"
+rm -rf config auto local .build cache
+
+# ---------------------------------------------------------------------------
+# 2. Initialize live-build config
+# ---------------------------------------------------------------------------
+# Bookworm is Debian 12, so explicitly use Debian mirrors. This prevents
+# live-build from trying to fetch bookworm from an Ubuntu mirror.
+echo "==> Configuring live-build for Debian ${BASE_SUITE}"
 lb config \
   --distribution "$BASE_SUITE" \
   --architecture "$ARCH" \
+  --mirror-bootstrap "http://deb.debian.org/debian/" \
+  --mirror-chroot "http://deb.debian.org/debian/" \
+  --mirror-binary "http://deb.debian.org/debian/" \
   --archive-areas "main contrib non-free non-free-firmware" \
   --debian-installer live \
   --bootappend-live "boot=live components quiet splash" \
@@ -56,7 +69,7 @@ lb config \
   --iso-volume "${OS_ID}-${VERSION_NUMBER}"
 
 # ---------------------------------------------------------------------------
-# 2. Package list — base system + optional AI support
+# 3. Package list — base system + optional AI support
 # ---------------------------------------------------------------------------
 mkdir -p config/package-lists
 cat > config/package-lists/dmj-os.list.chroot <<'EOF'
@@ -74,7 +87,7 @@ vim
 EOF
 
 # ---------------------------------------------------------------------------
-# 3. Branding — /etc/os-release, MOTD, hostname
+# 4. Branding — /etc/os-release, MOTD, hostname
 # ---------------------------------------------------------------------------
 mkdir -p config/includes.chroot/etc
 cat > config/includes.chroot/etc/os-release <<EOF
@@ -99,7 +112,7 @@ cat > config/includes.chroot/etc/motd <<EOF
 EOF
 
 # ---------------------------------------------------------------------------
-# 4. dmj-ai CLI — install only when its source files are present
+# 5. dmj-ai CLI — install only when its source files are present
 # ---------------------------------------------------------------------------
 DMJ_AI_SOURCE_DIR="${WORKDIR}/config/dmj-ai"
 DMJ_AI_DEST_DIR="config/includes.chroot/opt/dmj-ai"
@@ -116,7 +129,6 @@ if [[ -f "${DMJ_AI_SOURCE_DIR}/dmj_ai_infer.py" && -f "${DMJ_AI_SOURCE_DIR}/dmj-
      "${DMJ_AI_BIN_DIR}/dmj-ai"
   chmod +x "${DMJ_AI_BIN_DIR}/dmj-ai"
 
-  # Copy model files only when they actually exist.
   if [[ -f "$SAUDADE_CHECKPOINT_PATH" ]]; then
     cp "$SAUDADE_CHECKPOINT_PATH" \
        "${DMJ_AI_DEST_DIR}/model/saudade_v4.pt"
@@ -149,13 +161,12 @@ if [ -f /opt/dmj-ai/requirements.txt ]; then
 fi
 EOF
   chmod +x config/hooks/normal/0100-dmj-ai-setup.hook.chroot
-
 else
   echo "==> dmj-ai source not found; building OS without dmj-ai"
 fi
 
 # ---------------------------------------------------------------------------
-# 5. Optional custom Plymouth theme
+# 6. Optional custom Plymouth theme
 # ---------------------------------------------------------------------------
 PLYMOUTH_SOURCE_DIR="${WORKDIR}/config/plymouth/dmj-cinematic"
 PLYMOUTH_DEST_DIR="config/includes.chroot/usr/share/plymouth/themes/dmj-cinematic"
@@ -194,7 +205,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 6. Build
+# 7. Build
 # ---------------------------------------------------------------------------
 echo "==> Running lb build (this takes a while — grab coffee)"
 lb build
