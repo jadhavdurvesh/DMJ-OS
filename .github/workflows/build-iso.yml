@@ -1,12 +1,11 @@
 name: Build DMJ OS ISO
 
-# Run manually from the Actions tab, or automatically when important
-# DMJ OS files are pushed to the main branch.
+# Trigger manually, or automatically when DMJ OS files change
 on:
   workflow_dispatch:
     inputs:
       version_codename:
-        description: "Release codename (e.g. Ashen)"
+        description: "Release codename"
         required: false
         default: "Ashen"
 
@@ -14,36 +13,27 @@ on:
     branches:
       - main
     paths:
-      - "config/**"
-      - "build/**"
-      - "dmj-ai-assets/**"
-      - ".github/workflows/**"
+      - "dmj-os/**"
+      - ".github/workflows/build-iso.yml"
 
 jobs:
   build-iso:
     runs-on: ubuntu-latest
 
-    # Prevent a build from running forever.
     timeout-minutes: 90
 
     steps:
 
-      # -------------------------------
-      # CHECKOUT REPOSITORY
-      # -------------------------------
+      # Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          # Required if large files are tracked using Git LFS.
-          lfs: true
 
 
-      # -------------------------------
-      # INSTALL BUILD TOOLS
-      # -------------------------------
+      # Install build dependencies
       - name: Install build tools
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             debootstrap \
             live-build \
@@ -52,58 +42,27 @@ jobs:
           pip install --break-system-packages pillow
 
 
-      # -------------------------------
-      # GENERATE PLYMOUTH ASSETS
-      # -------------------------------
+      # Regenerate Plymouth boot animation assets
       - name: Regenerate Plymouth theme assets
-        working-directory: config/plymouth/dmj-cinematic
+        working-directory: dmj-os/config/plymouth/dmj-cinematic
         run: |
           python3 generate_assets.py
 
 
-      # -------------------------------
-      # OPTIONAL SAUDADE AI MODEL
-      # -------------------------------
-      - name: Stage Saudade checkpoint into build assets
-        run: |
-          mkdir -p dmj-ai-assets
-
-          echo "Checking for optional Saudade AI assets..."
-
-          # Only copy the checkpoint if it exists.
-          if [ -f "saudade_v4.pt" ]; then
-            cp saudade_v4.pt dmj-ai-assets/saudade_v4.pt
-            echo "✓ Saudade checkpoint copied."
-          else
-            echo "⚠ Saudade checkpoint not found — skipping."
-          fi
-
-          # Only copy the tokenizer if it exists.
-          if [ -f "tokenizer_32k.json" ]; then
-            cp tokenizer_32k.json dmj-ai-assets/tokenizer_32k.json
-            echo "✓ Tokenizer copied."
-          else
-            echo "⚠ Tokenizer not found — skipping."
-          fi
-
-
-      # -------------------------------
-      # SET RELEASE CODENAME
-      # -------------------------------
+      # Set release codename when manually triggered
       - name: Set release codename
         if: github.event_name == 'workflow_dispatch'
         run: |
           sed -i \
             "s/^VERSION_CODENAME=.*/VERSION_CODENAME=\"${{ github.event.inputs.version_codename }}\"/" \
-            build/build-dmj-os.sh
+            dmj-os/build/build-dmj-os.sh
 
 
-      # -------------------------------
-      # BUILD DMJ OS
-      # -------------------------------
+      # Build DMJ OS
       - name: Run DMJ OS build
+        working-directory: dmj-os
         run: |
-          echo "Checking build script..."
+          echo "Checking build directory..."
           ls -la ./build/
 
           echo "Making build script executable..."
@@ -113,12 +72,18 @@ jobs:
           sudo bash ./build/build-dmj-os.sh
 
 
-      # -------------------------------
-      # UPLOAD FINAL ISO
-      # -------------------------------
+      # Check build output
+      - name: Check ISO output
+        run: |
+          echo "Checking generated ISO..."
+          ls -lh dmj-os/out/ || true
+
+
+      # Upload the finished ISO
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
           name: dmj-os-iso
-          path: out/*.iso
+          path: dmj-os/out/*.iso
           retention-days: 14
+          if-no-files-found: error
