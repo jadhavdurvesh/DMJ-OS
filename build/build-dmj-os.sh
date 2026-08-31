@@ -21,8 +21,10 @@ ARCH="amd64"
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LB_DIR="${WORKDIR}/live-build-work"
 OUT_DIR="${WORKDIR}/out"
-DEBIAN_MIRROR="https://deb.debian.org/debian/"
-SECURITY_MIRROR="https://security.debian.org/debian-security/"
+# Keep mirror URLs without a trailing slash. live-build appends paths such as
+# /dists/<suite>; a trailing slash here can produce //dists/... URLs.
+DEBIAN_MIRROR="https://deb.debian.org/debian"
+SECURITY_MIRROR="https://security.debian.org/debian-security"
 
 # ---------------------------------------------------------------------------
 # 0. Sanity checks
@@ -47,10 +49,6 @@ cd "${LB_DIR}"
 # ---------------------------------------------------------------------------
 # 1. Configure live-build explicitly as Debian
 # ---------------------------------------------------------------------------
-# The GitHub runner's live-build package can inherit host-specific defaults.
-# --ignore-system-defaults prevents those defaults from leaking into the build.
-# Security is configured manually below because the Ubuntu-packaged live-build
-# used by the GitHub runner can generate the obsolete bookworm/updates path.
 echo "==> Configuring Debian ${BASE_SUITE} live-build"
 
 lb config \
@@ -71,9 +69,6 @@ lb config \
 # ---------------------------------------------------------------------------
 # 1a. Configure the correct Debian Bookworm security repository
 # ---------------------------------------------------------------------------
-# Debian 12 security updates use the suite "bookworm-security".
-# Do not use "bookworm/updates"; that path returns 404 and caused the last build
-# to fail with APT exit code 100.
 mkdir -p config/archives
 cat > config/archives/dmj-security.list.chroot <<EOF
 deb ${SECURITY_MIRROR} ${BASE_SUITE}-security main contrib non-free non-free-firmware
