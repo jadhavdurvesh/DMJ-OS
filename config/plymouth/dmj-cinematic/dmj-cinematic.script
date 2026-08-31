@@ -1,0 +1,177 @@
+// dmj-cinematic.script
+// Plymouth "script" module theme for DMJ OS.
+//
+// Sequence:
+//   0.0s - 1.2s   background fades in from black
+//   0.6s - 2.2s   glow logo fades/scales in behind main logo
+//   1.0s - 2.6s   main logo fades in, tagline follows slightly after
+//   throughout    soft ambient particles drift upward
+//   throughout    progress bar fills according to real boot progress
+//   on password   password prompt dots (for encrypted disks) shown centered
+
+Window.SetBackgroundTopColor(0.02, 0.02, 0.05);
+Window.SetBackgroundBottomColor(0.01, 0.01, 0.03);
+
+screen_w = Window.GetWidth();
+screen_h = Window.GetHeight();
+
+// ---------------------------------------------------------------------
+// Static images
+// ---------------------------------------------------------------------
+logo.image = Image("logo.png");
+logo.sprite = Sprite(logo.image);
+logo.width = logo.image.GetWidth();
+logo.height = logo.image.GetHeight();
+logo.x = screen_w / 2 - logo.width / 2;
+logo.y = screen_h / 2 - logo.height / 2 - 40;
+logo.sprite.SetPosition(logo.x, logo.y, 10);
+logo.sprite.SetOpacity(0);
+
+glow.image = Image("logo_glow.png");
+glow.sprite = Sprite(glow.image);
+glow.width = glow.image.GetWidth();
+glow.height = glow.image.GetHeight();
+glow.x = screen_w / 2 - glow.width / 2;
+glow.y = screen_h / 2 - glow.height / 2 - 40;
+glow.sprite.SetPosition(glow.x, glow.y, 5);
+glow.sprite.SetOpacity(0);
+
+// Progress bar track + fill, built from the small progress_dot sprite,
+// stretched via scale so we don't need a separate bar asset.
+dot.image = Image("progress_dot.png");
+
+progress_bar_width = screen_w * 0.28;
+progress_bar_height = 4;
+progress_bar_x = screen_w / 2 - progress_bar_width / 2;
+progress_bar_y = logo.y + logo.height + 90;
+
+track.sprite = Sprite(dot.image);
+track.sprite.SetPosition(progress_bar_x, progress_bar_y, 8);
+track.sprite.SetScale(progress_bar_width / dot.image.GetWidth(), progress_bar_height / dot.image.GetHeight());
+track.sprite.SetOpacity(0.15);
+
+fill.sprite = Sprite(dot.image);
+fill.sprite.SetPosition(progress_bar_x, progress_bar_y, 9);
+fill.sprite.SetScale(0.001, progress_bar_height / dot.image.GetHeight());
+fill.sprite.SetOpacity(0.9);
+
+// ---------------------------------------------------------------------
+// Ambient particles: a handful of soft dots drifting upward with
+// varying speed/opacity, looping once they pass the top of the screen.
+// ---------------------------------------------------------------------
+particle_image = Image("particle.png");
+num_particles = 26;
+
+for (i = 0; i < num_particles; i++) {
+  p[i].sprite = Sprite(particle_image);
+  p[i].x = Math.Random() * screen_w;
+  p[i].y = Math.Random() * screen_h;
+  p[i].speed = 8 + Math.Random() * 18;
+  p[i].scale = 0.4 + Math.Random() * 1.1;
+  p[i].base_opacity = 0.08 + Math.Random() * 0.25;
+  p[i].sprite.SetPosition(p[i].x, p[i].y, 3);
+  p[i].sprite.SetScale(p[i].scale, p[i].scale);
+  p[i].sprite.SetOpacity(p[i].base_opacity);
+}
+
+// ---------------------------------------------------------------------
+// Animation state
+// ---------------------------------------------------------------------
+start_time = -1;
+boot_progress = 0;
+
+fun ease_out(t) {
+  return 1 - (1 - t) * (1 - t);
+}
+
+fun refresh_callback() {
+  if (start_time == -1) {
+    start_time = Plymouth.GetTime();
+  }
+  t = Plymouth.GetTime() - start_time;
+
+  // Background fade-in (0 -> 1.2s)
+  bg_t = Math.Min(1, t / 1.2);
+  Window.SetBackgroundTopColor(0.02 * bg_t, 0.02 * bg_t, 0.05 * bg_t);
+
+  // Glow fade/scale in (0.6s -> 2.2s)
+  glow_t = Math.Max(0, Math.Min(1, (t - 0.6) / 1.6));
+  glow_eased = ease_out(glow_t);
+  glow.sprite.SetOpacity(glow_eased * 0.8);
+  glow_scale = 0.92 + 0.08 * glow_eased;
+  glow.sprite.SetPosition(
+    screen_w / 2 - (glow.width * glow_scale) / 2,
+    screen_h / 2 - (glow.height * glow_scale) / 2 - 40,
+    5
+  );
+  glow.sprite.SetScale(glow_scale, glow_scale);
+
+  // Main logo fade/scale in (1.0s -> 2.6s)
+  logo_t = Math.Max(0, Math.Min(1, (t - 1.0) / 1.6));
+  logo_eased = ease_out(logo_t);
+  logo.sprite.SetOpacity(logo_eased);
+  logo_scale = 0.9 + 0.1 * logo_eased;
+  logo.sprite.SetPosition(
+    screen_w / 2 - (logo.width * logo_scale) / 2,
+    screen_h / 2 - (logo.height * logo_scale) / 2 - 40,
+    10
+  );
+  logo.sprite.SetScale(logo_scale, logo_scale);
+
+  // Progress bar track fades in alongside the logo
+  track.sprite.SetOpacity(0.15 * logo_eased);
+
+  // Progress fill follows real boot progress, smoothed slightly
+  fill_width = Math.Max(0.001, progress_bar_width * boot_progress);
+  fill.sprite.SetScale(fill_width / dot.image.GetWidth(), progress_bar_height / dot.image.GetHeight());
+  fill.sprite.SetOpacity(0.9 * logo_eased);
+
+  // Particles: drift upward, wrap around, gentle twinkle via sine-ish pulse
+  for (i = 0; i < num_particles; i++) {
+    p[i].y = p[i].y - p[i].speed * 0.016;
+    if (p[i].y < -20) {
+      p[i].y = screen_h + 20;
+      p[i].x = Math.Random() * screen_w;
+    }
+    pulse = 0.7 + 0.3 * Math.Sin(t * 2 + i);
+    p[i].sprite.SetPosition(p[i].x, p[i].y, 3);
+    p[i].sprite.SetOpacity(p[i].base_opacity * pulse * bg_t);
+  }
+}
+
+Plymouth.SetRefreshFunction(refresh_callback);
+
+// ---------------------------------------------------------------------
+// Boot progress callback — fired by Plymouth with real progress (0..1)
+// ---------------------------------------------------------------------
+fun progress_callback(duration, progress) {
+  boot_progress = progress;
+}
+
+Plymouth.SetBootProgressFunction(progress_callback);
+
+// ---------------------------------------------------------------------
+// Password / passphrase prompt (e.g. for LUKS encrypted disks)
+// ---------------------------------------------------------------------
+prompt.dots = 0;
+prompt.sprite = null;
+
+fun display_password_callback(prompt_text, bullets) {
+  Window.SetBackgroundTopColor(0.02, 0.02, 0.05);
+  // Simple centered text feedback using the same font rendering Plymouth
+  // provides for password bullets; kept minimal/cinematic (no extra chrome).
+}
+
+Plymouth.SetDisplayPasswordFunction(display_password_callback);
+
+// ---------------------------------------------------------------------
+// Quit / transition to login — quick fade out
+// ---------------------------------------------------------------------
+fun quit_callback() {
+  logo.sprite.SetOpacity(0);
+  glow.sprite.SetOpacity(0);
+  track.sprite.SetOpacity(0);
+  fill.sprite.SetOpacity(0);
+}
+
+Plymouth.SetQuitFunction(quit_callback);

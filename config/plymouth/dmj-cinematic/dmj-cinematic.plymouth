@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=DMJ Cinematic
+Description=Cinematic animated boot splash for DMJ OS, featuring the DMJ OS wordmark, ambient particles, and a Saudade-branded loading bar.
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/dmj-cinematic
+ScriptFile=/usr/share/plymouth/themes/dmj-cinematic/dmj-cinematic.script
