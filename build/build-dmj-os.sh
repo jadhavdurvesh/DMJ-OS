@@ -1,28 +1,20 @@
 #!/usr/bin/env bash
 #
 # build-dmj-os.sh
-# Builds a bootable DMJ OS ISO (Debian-based) with the Saudade AI model
-# baked in as a CLI assistant (`dmj-ai`).
+# Builds a bootable DMJ OS ISO (Debian-based).
 #
-# Run this on a real Linux machine (or a Debian/Ubuntu VM), NOT inside a
-# restricted sandbox — it needs network access to Debian mirrors and root
-# privileges for debootstrap/live-build.
-#
-# Usage:
-#   sudo ./build-dmj-os.sh
-#
-# Output:
-#   ./out/dmj-os-<VERSION>.iso
+# Saudade AI and the custom Plymouth theme are optional. The ISO build
+# continues when those files are not present.
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# CONFIG — edit these
+# CONFIG
 # ---------------------------------------------------------------------------
 OS_NAME="DMJ OS"
 OS_ID="dmjos"
-VERSION_CODENAME="Ashen"        # <- your release name, separate from "DMJ OS"
+VERSION_CODENAME="Ashen"
 VERSION_NUMBER="1.0"
-BASE_SUITE="bookworm"           # Debian 12
+BASE_SUITE="bookworm"
 ARCH="amd64"
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LB_DIR="${WORKDIR}/live-build-work"
@@ -30,7 +22,6 @@ OUT_DIR="${WORKDIR}/out"
 
 SAUDADE_CHECKPOINT_PATH="${SAUDADE_CHECKPOINT_PATH:-${WORKDIR}/dmj-ai-assets/saudade_v4.pt}"
 SAUDADE_TOKENIZER_PATH="${SAUDADE_TOKENIZER_PATH:-${WORKDIR}/dmj-ai-assets/tokenizer_32k.json}"
-SAUDADE_REPO_URL="https://github.com/jadhavdurvesh/microgpt_by_DMJ"
 
 # ---------------------------------------------------------------------------
 # 0. Sanity checks
@@ -47,15 +38,6 @@ for cmd in debootstrap lb; do
     exit 1
   fi
 done
-
-if [[ ! -f "$SAUDADE_CHECKPOINT_PATH" ]]; then
-  echo "WARNING: Saudade checkpoint not found at $SAUDADE_CHECKPOINT_PATH"
-  echo "The ISO will still build, but dmj-ai will not work until you place"
-  echo "the checkpoint there (or set SAUDADE_CHECKPOINT_PATH) and rebuild."
-  echo
-  read -r -p "Continue anyway? [y/N] " ans
-  [[ "$ans" =~ ^[Yy]$ ]] || exit 1
-fi
 
 mkdir -p "$LB_DIR" "$OUT_DIR"
 cd "$LB_DIR"
@@ -74,7 +56,7 @@ lb config \
   --iso-volume "${OS_ID}-${VERSION_NUMBER}"
 
 # ---------------------------------------------------------------------------
-# 2. Package list — base system + tools + Python for the AI CLI
+# 2. Package list — base system + optional AI support
 # ---------------------------------------------------------------------------
 mkdir -p config/package-lists
 cat > config/package-lists/dmj-os.list.chroot <<'EOF'
@@ -114,65 +96,102 @@ cat > config/includes.chroot/etc/motd <<EOF
 
   ${OS_NAME} ${VERSION_NUMBER} "${VERSION_CODENAME}"
   ------------------------------------------
-  Built-in AI assistant: run 'dmj-ai "your prompt"'
-
 EOF
 
 # ---------------------------------------------------------------------------
-# 4. dmj-ai CLI + Saudade model files
+# 4. dmj-ai CLI — install only when its source files are present
 # ---------------------------------------------------------------------------
-mkdir -p config/includes.chroot/opt/dmj-ai/model
-mkdir -p config/includes.chroot/usr/local/bin
+DMJ_AI_SOURCE_DIR="${WORKDIR}/config/dmj-ai"
+DMJ_AI_DEST_DIR="config/includes.chroot/opt/dmj-ai"
+DMJ_AI_BIN_DIR="config/includes.chroot/usr/local/bin"
 
-cp "${WORKDIR}/config/dmj-ai/dmj_ai_infer.py" config/includes.chroot/opt/dmj-ai/dmj_ai_infer.py
-cp "${WORKDIR}/config/dmj-ai/dmj-ai" config/includes.chroot/usr/local/bin/dmj-ai
-chmod +x config/includes.chroot/usr/local/bin/dmj-ai
+if [[ -f "${DMJ_AI_SOURCE_DIR}/dmj_ai_infer.py" && -f "${DMJ_AI_SOURCE_DIR}/dmj-ai" ]]; then
+  echo "==> dmj-ai source found; adding CLI"
 
-if [[ -f "$SAUDADE_CHECKPOINT_PATH" ]]; then
-  cp "$SAUDADE_CHECKPOINT_PATH" config/includes.chroot/opt/dmj-ai/model/saudade_v4.pt
-fi
-if [[ -f "$SAUDADE_TOKENIZER_PATH" ]]; then
-  cp "$SAUDADE_TOKENIZER_PATH" config/includes.chroot/opt/dmj-ai/model/tokenizer_32k.json
-fi
+  mkdir -p "${DMJ_AI_DEST_DIR}/model" "$DMJ_AI_BIN_DIR"
 
-# requirements for inference, installed inside the chroot via hook
-mkdir -p config/includes.chroot/opt/dmj-ai
-cat > config/includes.chroot/opt/dmj-ai/requirements.txt <<'EOF'
+  cp "${DMJ_AI_SOURCE_DIR}/dmj_ai_infer.py" \
+     "${DMJ_AI_DEST_DIR}/dmj_ai_infer.py"
+  cp "${DMJ_AI_SOURCE_DIR}/dmj-ai" \
+     "${DMJ_AI_BIN_DIR}/dmj-ai"
+  chmod +x "${DMJ_AI_BIN_DIR}/dmj-ai"
+
+  # Copy model files only when they actually exist.
+  if [[ -f "$SAUDADE_CHECKPOINT_PATH" ]]; then
+    cp "$SAUDADE_CHECKPOINT_PATH" \
+       "${DMJ_AI_DEST_DIR}/model/saudade_v4.pt"
+    echo "==> Saudade checkpoint included"
+  else
+    echo "WARNING: Saudade checkpoint not found; skipping model"
+  fi
+
+  if [[ -f "$SAUDADE_TOKENIZER_PATH" ]]; then
+    cp "$SAUDADE_TOKENIZER_PATH" \
+       "${DMJ_AI_DEST_DIR}/model/tokenizer_32k.json"
+    echo "==> Saudade tokenizer included"
+  else
+    echo "WARNING: Saudade tokenizer not found; skipping tokenizer"
+  fi
+
+  cat > "${DMJ_AI_DEST_DIR}/requirements.txt" <<'EOF'
 torch --index-url https://download.pytorch.org/whl/cpu
 tokenizers
 EOF
 
-# ---------------------------------------------------------------------------
-# 5. Hook: install Python deps for dmj-ai inside the chroot at build time
-# ---------------------------------------------------------------------------
-mkdir -p config/hooks/normal
-cat > config/hooks/normal/0100-dmj-ai-setup.hook.chroot <<'EOF'
+  mkdir -p config/hooks/normal
+  cat > config/hooks/normal/0100-dmj-ai-setup.hook.chroot <<'EOF'
 #!/bin/sh
 set -e
-echo "==> Installing dmj-ai Python dependencies"
-python3 -m venv /opt/dmj-ai/venv
-/opt/dmj-ai/venv/bin/pip install --no-cache-dir -r /opt/dmj-ai/requirements.txt
+if [ -f /opt/dmj-ai/requirements.txt ]; then
+  echo "==> Installing dmj-ai Python dependencies"
+  python3 -m venv /opt/dmj-ai/venv
+  /opt/dmj-ai/venv/bin/pip install --no-cache-dir -r /opt/dmj-ai/requirements.txt
+fi
 EOF
-chmod +x config/hooks/normal/0100-dmj-ai-setup.hook.chroot
+  chmod +x config/hooks/normal/0100-dmj-ai-setup.hook.chroot
 
-# Plymouth: install the custom DMJ Cinematic theme and set it as default
-mkdir -p config/includes.chroot/usr/share/plymouth/themes/dmj-cinematic
-cp "${WORKDIR}/config/plymouth/dmj-cinematic/dmj-cinematic.plymouth" \
-   config/includes.chroot/usr/share/plymouth/themes/dmj-cinematic/
-cp "${WORKDIR}/config/plymouth/dmj-cinematic/dmj-cinematic.script" \
-   config/includes.chroot/usr/share/plymouth/themes/dmj-cinematic/
-cp "${WORKDIR}/config/plymouth/dmj-cinematic/images/logo.png" \
-   "${WORKDIR}/config/plymouth/dmj-cinematic/images/logo_glow.png" \
-   "${WORKDIR}/config/plymouth/dmj-cinematic/images/particle.png" \
-   "${WORKDIR}/config/plymouth/dmj-cinematic/images/progress_dot.png" \
-   config/includes.chroot/usr/share/plymouth/themes/dmj-cinematic/
+else
+  echo "==> dmj-ai source not found; building OS without dmj-ai"
+fi
 
-cat > config/hooks/normal/0200-plymouth-theme.hook.chroot <<'EOF'
+# ---------------------------------------------------------------------------
+# 5. Optional custom Plymouth theme
+# ---------------------------------------------------------------------------
+PLYMOUTH_SOURCE_DIR="${WORKDIR}/config/plymouth/dmj-cinematic"
+PLYMOUTH_DEST_DIR="config/includes.chroot/usr/share/plymouth/themes/dmj-cinematic"
+
+if [[ -f "${PLYMOUTH_SOURCE_DIR}/dmj-cinematic.plymouth" && \
+      -f "${PLYMOUTH_SOURCE_DIR}/dmj-cinematic.script" && \
+      -f "${PLYMOUTH_SOURCE_DIR}/images/logo.png" && \
+      -f "${PLYMOUTH_SOURCE_DIR}/images/logo_glow.png" && \
+      -f "${PLYMOUTH_SOURCE_DIR}/images/particle.png" && \
+      -f "${PLYMOUTH_SOURCE_DIR}/images/progress_dot.png" ]]; then
+
+  echo "==> Installing DMJ Cinematic Plymouth theme"
+  mkdir -p "$PLYMOUTH_DEST_DIR"
+
+  cp "${PLYMOUTH_SOURCE_DIR}/dmj-cinematic.plymouth" \
+     "${PLYMOUTH_DEST_DIR}/"
+  cp "${PLYMOUTH_SOURCE_DIR}/dmj-cinematic.script" \
+     "${PLYMOUTH_DEST_DIR}/"
+  cp "${PLYMOUTH_SOURCE_DIR}/images/logo.png" \
+     "${PLYMOUTH_SOURCE_DIR}/images/logo_glow.png" \
+     "${PLYMOUTH_SOURCE_DIR}/images/particle.png" \
+     "${PLYMOUTH_SOURCE_DIR}/images/progress_dot.png" \
+     "${PLYMOUTH_DEST_DIR}/"
+
+  mkdir -p config/hooks/normal
+  cat > config/hooks/normal/0200-plymouth-theme.hook.chroot <<'EOF'
 #!/bin/sh
 set -e
-plymouth-set-default-theme -R dmj-cinematic
+if command -v plymouth-set-default-theme >/dev/null 2>&1; then
+  plymouth-set-default-theme -R dmj-cinematic
+fi
 EOF
-chmod +x config/hooks/normal/0200-plymouth-theme.hook.chroot
+  chmod +x config/hooks/normal/0200-plymouth-theme.hook.chroot
+else
+  echo "==> DMJ Cinematic Plymouth theme not found; using default Plymouth theme"
+fi
 
 # ---------------------------------------------------------------------------
 # 6. Build
@@ -180,7 +199,7 @@ chmod +x config/hooks/normal/0200-plymouth-theme.hook.chroot
 echo "==> Running lb build (this takes a while — grab coffee)"
 lb build
 
-ISO_FILE=$(find . -maxdepth 1 -name "*.iso" | head -n1)
+ISO_FILE=$(find . -maxdepth 1 -type f -name "*.iso" | head -n1)
 if [[ -n "$ISO_FILE" ]]; then
   FINAL_NAME="${OS_ID}-${VERSION_NUMBER}-${VERSION_CODENAME,,}.iso"
   cp "$ISO_FILE" "${OUT_DIR}/${FINAL_NAME}"
