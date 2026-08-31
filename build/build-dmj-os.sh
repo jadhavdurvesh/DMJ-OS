@@ -21,7 +21,8 @@ ARCH="amd64"
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LB_DIR="${WORKDIR}/live-build-work"
 OUT_DIR="${WORKDIR}/out"
-DEBIAN_MIRROR="http://deb.debian.org/debian/"
+DEBIAN_MIRROR="https://deb.debian.org/debian/"
+SECURITY_MIRROR="https://security.debian.org/debian-security/"
 
 # ---------------------------------------------------------------------------
 # 0. Sanity checks
@@ -46,9 +47,10 @@ cd "${LB_DIR}"
 # ---------------------------------------------------------------------------
 # 1. Configure live-build explicitly as Debian
 # ---------------------------------------------------------------------------
-# The GitHub runner's /etc/live/build.conf can contain Ubuntu defaults.
-# --ignore-system-defaults prevents those host defaults from leaking into
-# the build, while --mode debian selects Debian live-build defaults.
+# The GitHub runner's live-build package can inherit host-specific defaults.
+# --ignore-system-defaults prevents those defaults from leaking into the build.
+# Security is configured manually below because the Ubuntu-packaged live-build
+# used by the GitHub runner can generate the obsolete bookworm/updates path.
 echo "==> Configuring Debian ${BASE_SUITE} live-build"
 
 lb config \
@@ -59,15 +61,32 @@ lb config \
   --mirror-bootstrap "${DEBIAN_MIRROR}" \
   --mirror-chroot "${DEBIAN_MIRROR}" \
   --mirror-binary "${DEBIAN_MIRROR}" \
-  --security true \
+  --security false \
   --archive-areas "main contrib non-free non-free-firmware" \
   --debian-installer live \
   --bootappend-live "boot=live components quiet splash" \
   --iso-application "${OS_NAME}" \
   --iso-volume "${OS_ID}-${VERSION_NUMBER}"
 
-# Fail early if live-build generated the wrong mode or an Ubuntu mirror.
+# ---------------------------------------------------------------------------
+# 1a. Configure the correct Debian Bookworm security repository
+# ---------------------------------------------------------------------------
+# Debian 12 security updates use the suite "bookworm-security".
+# Do not use "bookworm/updates"; that path returns 404 and caused the last build
+# to fail with APT exit code 100.
+mkdir -p config/archives
+cat > config/archives/dmj-security.list.chroot <<EOF
+deb ${SECURITY_MIRROR} ${BASE_SUITE}-security main contrib non-free non-free-firmware
+EOF
+
+# Fail early if the known-invalid security path appears in generated config.
 echo "==> Verifying generated live-build configuration"
+if grep -RqsE 'security\.debian\.org.*/bookworm/updates|bookworm/updates.*security\.debian\.org' config 2>/dev/null; then
+  echo "ERROR: Invalid Debian security repository path was generated." >&2
+  grep -RInE 'security\.debian\.org.*/bookworm/updates|bookworm/updates.*security\.debian\.org' config >&2 || true
+  exit 1
+fi
+
 if grep -RqsE 'ubuntu/|security\.ubuntu\.com|ubuntu/24\.04' config 2>/dev/null; then
   echo "ERROR: Ubuntu repository settings leaked into the Debian live-build configuration." >&2
   grep -RInE 'ubuntu/|security\.ubuntu\.com|ubuntu/24\.04' config >&2 || true
@@ -141,5 +160,5 @@ fi
 FINAL_NAME="${OS_ID}-${VERSION_NUMBER}-${VERSION_CODENAME,,}.iso"
 cp "${ISO_FILE}" "${OUT_DIR}/${FINAL_NAME}"
 
- echo "==> Build complete: ${OUT_DIR}/${FINAL_NAME}"
+echo "==> Build complete: ${OUT_DIR}/${FINAL_NAME}"
 ls -lh "${OUT_DIR}/${FINAL_NAME}"
