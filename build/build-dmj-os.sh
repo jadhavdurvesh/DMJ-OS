@@ -21,8 +21,9 @@ WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LB_DIR="${WORKDIR}/live-build-work"
 OUT_DIR="${WORKDIR}/out"
 
-# Use the official Debian mirror explicitly. The installed live-build version
-# on the GitHub runner does not support the newer *-security mirror flags.
+# Official Debian mirror. GitHub Actions runs on Ubuntu, so explicitly
+# disabling live-build security repositories prevents it from inheriting an
+# Ubuntu security mirror for the Debian Bookworm build.
 DEBIAN_MIRROR="http://deb.debian.org/debian/"
 
 # ---------------------------------------------------------------------------
@@ -60,6 +61,7 @@ lb config \
   --mirror-bootstrap "$DEBIAN_MIRROR" \
   --mirror-chroot "$DEBIAN_MIRROR" \
   --mirror-binary "$DEBIAN_MIRROR" \
+  --security false \
   --archive-areas "main contrib non-free non-free-firmware" \
   --debian-installer live \
   --bootappend-live "boot=live components quiet splash" \
