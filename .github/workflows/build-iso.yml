@@ -37,7 +37,7 @@ jobs:
           pip install --break-system-packages pillow
 
       - name: Regenerate Plymouth theme assets
-        working-directory: dmj-os/config/plymouth/dmj-cinematic
+        working-directory: config/plymouth/dmj-cinematic
         run: python3 generate_assets.py
 
       - name: Stage Saudade checkpoint into build assets
