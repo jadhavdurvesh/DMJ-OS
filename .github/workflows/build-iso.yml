@@ -1,0 +1,66 @@
+name: Build DMJ OS ISO
+
+# Trigger manually from the Actions tab, or automatically on pushes to main
+# that touch the build kit or model checkpoint.
+on:
+  workflow_dispatch:
+    inputs:
+      version_codename:
+        description: "Release codename (e.g. Ashen)"
+        required: false
+        default: "Ashen"
+  push:
+    branches: [main]
+    paths:
+      - "dmj-os/**"
+      - "dmj-ai-assets/**"
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    # live-build + debootstrap need a lot of scratch space; GitHub's default
+    # runner disk (~14GB free) is usually enough for a minimal XFCE image,
+    # but keep an eye on this if you add more packages later.
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          # Needed if your Saudade checkpoint is tracked with Git LFS
+          lfs: true
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap live-build python3-pip
+          pip install --break-system-packages pillow
+
+      - name: Regenerate Plymouth theme assets
+        working-directory: dmj-os/config/plymouth/dmj-cinematic
+        run: python3 generate_assets.py
+
+      - name: Stage Saudade checkpoint into build assets
+        run: |
+          mkdir -p dmj-os/dmj-ai-assets
+          # Adjust these source paths to wherever the checkpoint/tokenizer
+          # actually live in YOUR repo.
+          cp path/to/your/saudade_v4.pt dmj-os/dmj-ai-assets/saudade_v4.pt
+          cp path/to/your/tokenizer_32k.json dmj-os/dmj-ai-assets/tokenizer_32k.json
+
+      - name: Set release codename
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          sed -i "s/^VERSION_CODENAME=.*/VERSION_CODENAME=\"${{ github.event.inputs.version_codename }}\"/" \
+            dmj-os/build/build-dmj-os.sh
+
+      - name: Run DMJ OS build
+        working-directory: dmj-os
+        run: sudo ./build/build-dmj-os.sh
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmj-os-iso
+          path: dmj-os/out/*.iso
+          retention-days: 14
