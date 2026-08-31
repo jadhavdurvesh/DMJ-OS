@@ -1,6 +1,5 @@
 name: Build DMJ OS ISO
 
-# Trigger manually, or automatically when relevant DMJ OS files change
 on:
   workflow_dispatch:
     inputs:
@@ -14,29 +13,31 @@ on:
       - main
     paths:
       - "build/**"
-      - "config/**"
       - ".github/workflows/build-iso.yml"
+
+permissions:
+  contents: read
 
 jobs:
   build-iso:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
 
     steps:
-      # Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Install build dependencies
       - name: Install build tools
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             debootstrap \
             live-build \
-            python3-pip
+            debian-archive-keyring \
+            xorriso \
+            isolinux \
+            syslinux-common
 
-      # Set release codename when manually triggered
       - name: Set release codename
         if: github.event_name == 'workflow_dispatch'
         run: |
@@ -44,29 +45,28 @@ jobs:
             "s/^VERSION_CODENAME=.*/VERSION_CODENAME=\"${{ github.event.inputs.version_codename }}\"/" \
             build/build-dmj-os.sh
 
-      # Build DMJ OS
       - name: Run DMJ OS build
         run: |
           echo "Checking build directory..."
           ls -la ./build/
 
-          echo "Making build script executable..."
           chmod +x ./build/build-dmj-os.sh
-
-          echo "Starting DMJ OS build..."
           sudo bash ./build/build-dmj-os.sh
 
-      # Check build output
       - name: Check ISO output
         run: |
           echo "Checking generated ISO..."
-          ls -lh ./out/ || true
+          ls -lah ./out/
 
-      # Upload the finished ISO
+          if ! find ./out -type f -name "*.iso" -print -quit | grep -q .; then
+            echo "ERROR: No ISO was generated."
+            exit 1
+          fi
+
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dmj-os-iso
+          name: dmj-os-${{ inputs.version_codename || 'Ashen' }}
           path: out/*.iso
-          retention-days: 14
           if-no-files-found: error
+          retention-days: 14
