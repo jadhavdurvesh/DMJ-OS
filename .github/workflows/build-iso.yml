@@ -1,6 +1,6 @@
 name: Build DMJ OS ISO
 
-# Trigger manually, or automatically when DMJ OS files change
+# Trigger manually, or automatically when relevant DMJ OS files change
 on:
   workflow_dispatch:
     inputs:
@@ -13,41 +13,28 @@ on:
     branches:
       - main
     paths:
-      - "dmj-os/**"
+      - "build/**"
+      - "config/**"
       - ".github/workflows/build-iso.yml"
 
 jobs:
   build-iso:
     runs-on: ubuntu-latest
-
     timeout-minutes: 90
 
     steps:
-
       # Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
-
 
       # Install build dependencies
       - name: Install build tools
         run: |
           sudo apt-get update
-
           sudo apt-get install -y \
             debootstrap \
             live-build \
             python3-pip
-
-          pip install --break-system-packages pillow
-
-
-      # Regenerate Plymouth boot animation assets
-      - name: Regenerate Plymouth theme assets
-        working-directory: dmj-os/config/plymouth/dmj-cinematic
-        run: |
-          python3 generate_assets.py
-
 
       # Set release codename when manually triggered
       - name: Set release codename
@@ -55,12 +42,10 @@ jobs:
         run: |
           sed -i \
             "s/^VERSION_CODENAME=.*/VERSION_CODENAME=\"${{ github.event.inputs.version_codename }}\"/" \
-            dmj-os/build/build-dmj-os.sh
-
+            build/build-dmj-os.sh
 
       # Build DMJ OS
       - name: Run DMJ OS build
-        working-directory: dmj-os
         run: |
           echo "Checking build directory..."
           ls -la ./build/
@@ -71,19 +56,17 @@ jobs:
           echo "Starting DMJ OS build..."
           sudo bash ./build/build-dmj-os.sh
 
-
       # Check build output
       - name: Check ISO output
         run: |
           echo "Checking generated ISO..."
-          ls -lh dmj-os/out/ || true
-
+          ls -lh ./out/ || true
 
       # Upload the finished ISO
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
           name: dmj-os-iso
-          path: dmj-os/out/*.iso
+          path: out/*.iso
           retention-days: 14
           if-no-files-found: error
