@@ -103,7 +103,14 @@ jobs:
       # -------------------------------
       - name: Run DMJ OS build
         run: |
-          sudo ./build/build-dmj-os.sh
+          echo "Checking build script..."
+          ls -la ./build/
+
+          echo "Making build script executable..."
+          chmod +x ./build/build-dmj-os.sh
+
+          echo "Starting DMJ OS build..."
+          sudo bash ./build/build-dmj-os.sh
 
 
       # -------------------------------
