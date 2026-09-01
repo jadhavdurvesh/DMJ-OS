@@ -2,6 +2,12 @@
 """
 generate_assets.py
 
+Historical note: the images/ directory now ships the real DMJ OS logo
+assets (hand-designed, not generated) — this script is kept only as a
+fallback/dev tool for prototyping alternate layouts. Do NOT rerun it
+against the current images/ directory unless you intend to overwrite the
+real logo/glow files with placeholder text-rendered versions.
+
 Generates the image assets used by the DMJ OS cinematic Plymouth theme:
   - logo.png       : "DMJ OS" wordmark, white on transparent, for the main reveal
   - logo_glow.png  : soft blurred glow version of the same wordmark, drawn

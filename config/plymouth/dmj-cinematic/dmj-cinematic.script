@@ -22,28 +22,43 @@ logo.image = Image("logo.png");
 logo.sprite = Sprite(logo.image);
 logo.width = logo.image.GetWidth();
 logo.height = logo.image.GetHeight();
-logo.x = screen_w / 2 - logo.width / 2;
-logo.y = screen_h / 2 - logo.height / 2 - 40;
+
+// The shipped logo/glow assets are high-resolution (drawn for print/export,
+// not for a specific screen), so scale them down to fit comfortably on
+// screen regardless of the actual boot resolution: cap at 42% of screen
+// width and 22% of screen height, whichever is more restrictive.
+base_scale = (screen_w * 0.42) / logo.width;
+max_h_scale = (screen_h * 0.22) / logo.height;
+if (max_h_scale < base_scale) {
+  base_scale = max_h_scale;
+}
+logo_display_w = logo.width * base_scale;
+logo_display_h = logo.height * base_scale;
+
+logo.x = screen_w / 2 - logo_display_w / 2;
+logo.y = screen_h / 2 - logo_display_h / 2 - 40;
 logo.sprite.SetPosition(logo.x, logo.y, 10);
+logo.sprite.SetScale(base_scale, base_scale);
 logo.sprite.SetOpacity(0);
 
 glow.image = Image("logo_glow.png");
 glow.sprite = Sprite(glow.image);
 glow.width = glow.image.GetWidth();
 glow.height = glow.image.GetHeight();
-glow.x = screen_w / 2 - glow.width / 2;
-glow.y = screen_h / 2 - glow.height / 2 - 40;
+glow.x = screen_w / 2 - (glow.width * base_scale) / 2;
+glow.y = screen_h / 2 - (glow.height * base_scale) / 2 - 40;
 glow.sprite.SetPosition(glow.x, glow.y, 5);
+glow.sprite.SetScale(base_scale, base_scale);
 glow.sprite.SetOpacity(0);
 
-// Progress bar track + fill, built from the small progress_dot sprite,
-// stretched via scale so we don't need a separate bar asset.
+// Progress bar track + fill, built from the progress_dot sprite, stretched
+// via non-uniform scale into a thin bar so no separate bar asset is needed.
 dot.image = Image("progress_dot.png");
 
 progress_bar_width = screen_w * 0.28;
 progress_bar_height = 4;
 progress_bar_x = screen_w / 2 - progress_bar_width / 2;
-progress_bar_y = logo.y + logo.height + 90;
+progress_bar_y = logo.y + logo_display_h + 90;
 
 track.sprite = Sprite(dot.image);
 track.sprite.SetPosition(progress_bar_x, progress_bar_y, 8);
@@ -98,7 +113,7 @@ fun refresh_callback() {
   glow_t = Math.Max(0, Math.Min(1, (t - 0.6) / 1.6));
   glow_eased = ease_out(glow_t);
   glow.sprite.SetOpacity(glow_eased * 0.8);
-  glow_scale = 0.92 + 0.08 * glow_eased;
+  glow_scale = base_scale * (0.92 + 0.08 * glow_eased);
   glow.sprite.SetPosition(
     screen_w / 2 - (glow.width * glow_scale) / 2,
     screen_h / 2 - (glow.height * glow_scale) / 2 - 40,
@@ -110,7 +125,7 @@ fun refresh_callback() {
   logo_t = Math.Max(0, Math.Min(1, (t - 1.0) / 1.6));
   logo_eased = ease_out(logo_t);
   logo.sprite.SetOpacity(logo_eased);
-  logo_scale = 0.9 + 0.1 * logo_eased;
+  logo_scale = base_scale * (0.9 + 0.1 * logo_eased);
   logo.sprite.SetPosition(
     screen_w / 2 - (logo.width * logo_scale) / 2,
     screen_h / 2 - (logo.height * logo_scale) / 2 - 40,

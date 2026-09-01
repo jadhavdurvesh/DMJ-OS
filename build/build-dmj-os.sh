@@ -2,8 +2,13 @@
 #
 # build-dmj-os.sh
 # Builds a bootable DMJ OS ISO based on Debian 12 (Bookworm).
-# Large Saudade AI files and custom Plymouth generation are intentionally
-# omitted for this base build.
+#
+# The Saudade AI CLI integration has been removed from this project.
+# The custom "DMJ Cinematic" Plymouth boot splash is included by default;
+# an optional macOS-style desktop theme (WhiteSur GTK/icons + Plank dock)
+# can be enabled via INCLUDE_MACOS_THEME=true (off by default, since it
+# adds a network-dependent build step on top of an already fragile
+# live-build pipeline — see docs/BUILD_TROUBLESHOOTING.md).
 
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -17,6 +22,12 @@ VERSION_CODENAME="Ashen"
 VERSION_NUMBER="1.0"
 BASE_SUITE="bookworm"
 ARCH="amd64"
+
+# Opt-in extras. Both default OFF so the base build stays exactly as
+# reliable as the current working configuration; enable via env var, e.g.:
+#   INCLUDE_PLYMOUTH_THEME=true sudo -E ./build/build-dmj-os.sh
+INCLUDE_PLYMOUTH_THEME="${INCLUDE_PLYMOUTH_THEME:-true}"
+INCLUDE_MACOS_THEME="${INCLUDE_MACOS_THEME:-false}"
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LB_DIR="${WORKDIR}/live-build-work"
@@ -97,9 +108,6 @@ task-xfce-desktop
 network-manager
 firmware-linux
 firmware-misc-nonfree
-python3
-python3-pip
-python3-venv
 plymouth
 plymouth-themes
 git
@@ -107,6 +115,14 @@ curl
 vim
 sudo
 EOF
+
+if [[ "${INCLUDE_MACOS_THEME}" == "true" ]]; then
+  cat >> config/package-lists/dmj-os.list.chroot <<'EOF'
+plank
+sassc
+optipng
+EOF
+fi
 
 # ---------------------------------------------------------------------------
 # 3. DMJ OS branding
@@ -135,6 +151,129 @@ cat > config/includes.chroot/etc/motd <<EOF
   Welcome to DMJ OS.
 
 EOF
+
+# ---------------------------------------------------------------------------
+# 3a. Plymouth: install the custom "DMJ Cinematic" boot theme
+# ---------------------------------------------------------------------------
+mkdir -p config/hooks/normal
+
+if [[ "${INCLUDE_PLYMOUTH_THEME}" == "true" ]]; then
+  echo "==> Including DMJ Cinematic Plymouth boot theme"
+
+  PLYMOUTH_SRC="${WORKDIR}/config/plymouth/dmj-cinematic"
+  PLYMOUTH_DEST="config/includes.chroot/usr/share/plymouth/themes/dmj-cinematic"
+  mkdir -p "${PLYMOUTH_DEST}"
+
+  cp "${PLYMOUTH_SRC}/dmj-cinematic.plymouth" "${PLYMOUTH_SRC}/dmj-cinematic.script" "${PLYMOUTH_DEST}/"
+  cp "${PLYMOUTH_SRC}/images/logo.png" \
+     "${PLYMOUTH_SRC}/images/logo_glow.png" \
+     "${PLYMOUTH_SRC}/images/particle.png" \
+     "${PLYMOUTH_SRC}/images/progress_dot.png" \
+     "${PLYMOUTH_DEST}/"
+
+  cat > config/hooks/normal/0100-plymouth-theme.hook.chroot <<'EOF'
+#!/bin/sh
+set -e
+plymouth-set-default-theme -R dmj-cinematic
+EOF
+  chmod +x config/hooks/normal/0100-plymouth-theme.hook.chroot
+else
+  echo "==> Skipping Plymouth boot theme (INCLUDE_PLYMOUTH_THEME=false)"
+fi
+
+# ---------------------------------------------------------------------------
+# 3b. Optional: macOS-style desktop (WhiteSur GTK theme + icons + Plank dock)
+# ---------------------------------------------------------------------------
+if [[ "${INCLUDE_MACOS_THEME}" == "true" ]]; then
+  echo "==> Including macOS-style desktop theme (WhiteSur + Plank)"
+
+  # Clones and installs the theme/icon packs at build time — needs network
+  # access inside the chroot to reach GitHub.
+  cat > config/hooks/normal/0200-macos-theme.hook.chroot <<'EOF'
+#!/bin/sh
+set -e
+echo "==> Installing WhiteSur GTK theme"
+git clone --depth=1 https://github.com/vinceliuice/WhiteSur-gtk-theme.git /tmp/WhiteSur-gtk-theme
+cd /tmp/WhiteSur-gtk-theme
+./install.sh -d /usr/share/themes || true
+cd /
+rm -rf /tmp/WhiteSur-gtk-theme
+
+echo "==> Installing WhiteSur icon theme"
+git clone --depth=1 https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/WhiteSur-icon-theme
+cd /tmp/WhiteSur-icon-theme
+./install.sh -d /usr/share/icons
+cd /
+rm -rf /tmp/WhiteSur-icon-theme
+
+echo "==> Installing WhiteSur cursors"
+git clone --depth=1 https://github.com/vinceliuice/WhiteSur-cursors.git /tmp/WhiteSur-cursors
+cd /tmp/WhiteSur-cursors
+./install.sh -d /usr/share/icons || true
+cd /
+rm -rf /tmp/WhiteSur-cursors
+EOF
+  chmod +x config/hooks/normal/0200-macos-theme.hook.chroot
+
+  # Defaults applied to every new user via /etc/skel, so a fresh live
+  # session boots straight into the themed desktop with the dock running.
+  SKEL="config/includes.chroot/etc/skel"
+  mkdir -p "${SKEL}/.config/gtk-3.0"
+  mkdir -p "${SKEL}/.config/xfce4/xfconf/xfce-perchannel-xml"
+  mkdir -p "${SKEL}/.config/autostart"
+  mkdir -p "${SKEL}/.config/plank/dock1/launchers"
+
+  cat > "${SKEL}/.config/gtk-3.0/settings.ini" <<'EOF'
+[Settings]
+gtk-theme-name=WhiteSur-Dark
+gtk-icon-theme-name=WhiteSur
+gtk-cursor-theme-name=WhiteSur-cursors
+gtk-application-prefer-dark-theme=1
+EOF
+
+  cat > "${SKEL}/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xsettings" version="1.0">
+  <property name="Net" type="empty">
+    <property name="ThemeName" type="string" value="WhiteSur-Dark"/>
+    <property name="IconThemeName" type="string" value="WhiteSur"/>
+  </property>
+  <property name="Gtk" type="empty">
+    <property name="CursorThemeName" type="string" value="WhiteSur-cursors"/>
+  </property>
+</channel>
+EOF
+
+  cat > "${SKEL}/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfwm4" version="1.0">
+  <property name="general" type="empty">
+    <property name="theme" type="string" value="WhiteSur-Dark"/>
+  </property>
+</channel>
+EOF
+
+  cat > "${SKEL}/.config/autostart/plank.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Plank
+Comment=macOS-style dock
+Exec=plank
+X-GNOME-Autostart-enabled=true
+EOF
+
+  cat > "${SKEL}/.config/plank/dock1/settings.ini" <<'EOF'
+[PlankDockPreferences]
+Theme=Transparent
+IconSize=48
+Position=2
+Alignment=1
+HideMode=1
+PinnedOnly=false
+EOF
+else
+  echo "==> Skipping macOS-style theme (INCLUDE_MACOS_THEME=false)"
+fi
 
 # ---------------------------------------------------------------------------
 # 4. Build
