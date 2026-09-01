@@ -44,33 +44,48 @@ Open `build/build-dmj-os.sh` and adjust the top `CONFIG` block:
 - `VERSION_NUMBER`
 - `BASE_SUITE` — Debian release to base on (default: bookworm)
 - `INCLUDE_PLYMOUTH_THEME` — default `true`, the custom boot splash
-- `INCLUDE_MACOS_THEME` — default `false`, an optional macOS-style desktop (see below)
+- `INCLUDE_MACOS_THEME` — default `false`, macOS-style dock/theme (see "Deluxe build" below)
+- `INCLUDE_WALLPAPER` — default `false`, matching default desktop wallpaper
+- `INCLUDE_WELCOME_SCREEN` — default `false`, one-time first-login welcome dialog
+- `INCLUDE_DESKTOP_APPS` — default `false`, Firefox + VLC + an archive manager
 
 ## 3. Build
 
+Base (minimal, most reliable) build:
 ```bash
 cd DMJ-OS
 sudo ./build/build-dmj-os.sh
 ```
 
-Or with the optional macOS-style desktop theme enabled:
+Deluxe build (macOS-style theme + wallpaper + welcome screen + desktop apps):
 ```bash
-sudo -E INCLUDE_MACOS_THEME=true ./build/build-dmj-os.sh
+sudo -E env \
+  INCLUDE_MACOS_THEME=true \
+  INCLUDE_WALLPAPER=true \
+  INCLUDE_WELCOME_SCREEN=true \
+  INCLUDE_DESKTOP_APPS=true \
+  ./build/build-dmj-os.sh
 ```
 
-Takes anywhere from 15 minutes to over an hour depending on your
-connection and machine. Output ISO lands in `out/`.
+Takes anywhere from 15 minutes (base) to well over an hour (deluxe, since
+it also clones and builds GTK themes and installs a browser) depending on
+your connection and machine. Output ISO lands in `out/`, named with a
+`-macos` suffix for deluxe builds so it never overwrites a base build.
 
 ## 4. Test it
 
 ```bash
 qemu-system-x86_64 -m 2048 -cdrom out/dmjos-1.0-ashen.iso
+# or, for a deluxe build:
+qemu-system-x86_64 -m 2048 -cdrom out/dmjos-1.0-ashen-macos.iso
 ```
 
 ## What's included
 
 - `build/build-dmj-os.sh` — main build script (debootstrap config, branding, Plymouth theme, live-build invocation)
 - `config/plymouth/dmj-cinematic/` — the custom animated boot splash (wired in by default)
+- `config/wallpaper/` — the deluxe build's default desktop wallpaper + generator script
+- `config/welcome/` — the deluxe build's first-boot welcome dialog script
 - `docs/` — a running log of real build issues hit in CI and how they were fixed
 
 ## Boot splash: "DMJ Cinematic"
@@ -93,7 +108,9 @@ Files:
 
 **To swap in a different logo:** replace `images/logo.png` and
 `images/logo_glow.png` (same dimensions/aspect ideally) — the script
-scales them to fit the screen automatically.
+scales them to fit the screen automatically. If you also use the deluxe
+wallpaper, rerun `python3 config/wallpaper/generate_wallpaper.py`
+afterward so the wallpaper watermark matches.
 
 **To preview without a full ISO build**, on a Linux machine with Plymouth
 installed:
@@ -108,18 +125,20 @@ real boot timing, though.
 
 To disable it entirely: `INCLUDE_PLYMOUTH_THEME=false ./build/build-dmj-os.sh`.
 
-## Optional: macOS-style desktop theme
+## Deluxe build: macOS-style theme, wallpaper, welcome screen, desktop apps
 
-Off by default (`INCLUDE_MACOS_THEME=false`) since it adds a
-network-dependent build step (cloning theme repos from GitHub during the
-chroot build) on top of an already fragile live-build pipeline. Enable
-with `INCLUDE_MACOS_THEME=true` to get:
-- **WhiteSur GTK theme** — dark GTK theme styled after macOS
-- **WhiteSur icon theme** + **WhiteSur cursors**
-- **Plank** — an auto-hiding dock along the bottom of the screen
+All off by default in a plain `./build/build-dmj-os.sh` run, since together
+they add real build time and a network-dependent theme-cloning step on top
+of an already-tuned live-build pipeline. Enable them individually, or all
+at once via the GitHub Actions `variant: macos-deluxe` option (see below).
 
-Applied by default to every new user via `/etc/skel`, so a fresh live
-session boots straight into the themed desktop with the dock running.
+- **`INCLUDE_MACOS_THEME=true`** — WhiteSur GTK theme (dark, macOS-styled), WhiteSur icons + cursors, and Plank as an auto-hiding dock along the bottom of the screen
+- **`INCLUDE_WALLPAPER=true`** — the generated `config/wallpaper/wallpaper.png` (same dark gradient + glow language as the boot splash, with a small logo watermark) set as the default XFCE background
+- **`INCLUDE_WELCOME_SCREEN=true`** — a one-time `zenity` dialog on first login (tracked via a marker file so it never shows twice), briefly orienting a new user to the dock and preinstalled apps
+- **`INCLUDE_DESKTOP_APPS=true`** — Firefox ESR, VLC, and an archive manager (`xarchiver`) preinstalled
+
+All of the above are applied via `/etc/skel`, so a fresh live session boots
+straight into the fully configured desktop with no manual setup.
 
 ## History
 
@@ -132,6 +151,9 @@ to keep the build lean and focused on the base OS + boot experience.
 
 "DMJ OS" is the fixed product name. `VERSION_CODENAME` in the build
 script is the separate release name — currently set to "Ashen".
+The base build is tagged `v1.0.0` in this repo; the deluxe build shares
+the same OS version (1.0) with a `-macos` suffix on the ISO filename,
+since it's an edition, not a separate release line.
 
 ## Building in the cloud (GitHub Actions)
 
@@ -142,7 +164,13 @@ local machine needed. It builds `live-build` from source (see
 relying on the distro-packaged version.
 
 **Running it:**
-- Repo's **Actions** tab → **Build DMJ OS ISO** → **Run workflow** (lets you set a release codename)
-- Or push a change under `build/`, `config/`, or the workflow file to `main` — triggers automatically
-- Takes roughly 30–90 minutes
+- Repo's **Actions** tab → **Build DMJ OS ISO** → **Run workflow**
+  — set a release codename, and pick **variant**: `base` (default,
+  fastest, most reliable) or `macos-deluxe` (theme + wallpaper +
+  welcome screen + desktop apps)
+- Or push a change under `build/`, `config/`, or the workflow file to
+  `main` — triggers automatically, always as the `base` variant
+- Base takes roughly 30–90 minutes; deluxe takes longer (extra package
+  installs + theme cloning)
 - When it finishes: open the run → **Artifacts** → download the ISO
+  (named with a `-macos` suffix for deluxe runs)

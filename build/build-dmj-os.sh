@@ -23,11 +23,21 @@ VERSION_NUMBER="1.0"
 BASE_SUITE="bookworm"
 ARCH="amd64"
 
-# Opt-in extras. Both default OFF so the base build stays exactly as
-# reliable as the current working configuration; enable via env var, e.g.:
+# Opt-in extras. All default OFF so the base build stays exactly as
+# reliable as the current working configuration; enable via env vars, e.g.:
 #   INCLUDE_PLYMOUTH_THEME=true sudo -E ./build/build-dmj-os.sh
 INCLUDE_PLYMOUTH_THEME="${INCLUDE_PLYMOUTH_THEME:-true}"
 INCLUDE_MACOS_THEME="${INCLUDE_MACOS_THEME:-false}"
+INCLUDE_WALLPAPER="${INCLUDE_WALLPAPER:-false}"
+INCLUDE_WELCOME_SCREEN="${INCLUDE_WELCOME_SCREEN:-false}"
+INCLUDE_DESKTOP_APPS="${INCLUDE_DESKTOP_APPS:-false}"
+
+# Adds a "-macos" suffix to the output ISO filename when the deluxe extras
+# are on, so base and deluxe builds never overwrite each other in out/.
+BUILD_VARIANT_SUFFIX=""
+if [[ "${INCLUDE_MACOS_THEME}" == "true" ]]; then
+  BUILD_VARIANT_SUFFIX="-macos"
+fi
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LB_DIR="${WORKDIR}/live-build-work"
@@ -121,6 +131,20 @@ if [[ "${INCLUDE_MACOS_THEME}" == "true" ]]; then
 plank
 sassc
 optipng
+EOF
+fi
+
+if [[ "${INCLUDE_DESKTOP_APPS}" == "true" ]]; then
+  cat >> config/package-lists/dmj-os.list.chroot <<'EOF'
+firefox-esr
+vlc
+xarchiver
+EOF
+fi
+
+if [[ "${INCLUDE_WELCOME_SCREEN}" == "true" ]]; then
+  cat >> config/package-lists/dmj-os.list.chroot <<'EOF'
+zenity
 EOF
 fi
 
@@ -276,6 +300,78 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 3c. Optional: matching desktop wallpaper
+# ---------------------------------------------------------------------------
+if [[ "${INCLUDE_WALLPAPER}" == "true" ]]; then
+  echo "==> Including default desktop wallpaper"
+
+  WALLPAPER_SRC="${WORKDIR}/config/wallpaper/wallpaper.png"
+  if [[ ! -f "${WALLPAPER_SRC}" ]]; then
+    echo "ERROR: ${WALLPAPER_SRC} not found. Run:" >&2
+    echo "  python3 config/wallpaper/generate_wallpaper.py" >&2
+    echo "before building with INCLUDE_WALLPAPER=true." >&2
+    exit 1
+  fi
+
+  mkdir -p config/includes.chroot/usr/share/backgrounds/dmj-os
+  cp "${WALLPAPER_SRC}" config/includes.chroot/usr/share/backgrounds/dmj-os/wallpaper.png
+
+  SKEL="config/includes.chroot/etc/skel"
+  mkdir -p "${SKEL}/.config/xfce4/xfconf/xfce-perchannel-xml"
+
+  # xfce4-desktop's monitor/workspace property names vary by hardware, so
+  # this sets the common defaults; XFCE falls back sanely if a specific
+  # monitor property doesn't match at runtime.
+  cat > "${SKEL}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfce4-desktop" version="1.0">
+  <property name="backdrop" type="empty">
+    <property name="screen0" type="empty">
+      <property name="monitor0" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="last-image" type="string" value="/usr/share/backgrounds/dmj-os/wallpaper.png"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+      </property>
+      <property name="monitorVirtual1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="last-image" type="string" value="/usr/share/backgrounds/dmj-os/wallpaper.png"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+      </property>
+    </property>
+  </property>
+</channel>
+EOF
+else
+  echo "==> Skipping default wallpaper (INCLUDE_WALLPAPER=false)"
+fi
+
+# ---------------------------------------------------------------------------
+# 3d. Optional: first-boot welcome screen
+# ---------------------------------------------------------------------------
+if [[ "${INCLUDE_WELCOME_SCREEN}" == "true" ]]; then
+  echo "==> Including first-boot welcome screen"
+
+  mkdir -p config/includes.chroot/usr/local/bin
+  cp "${WORKDIR}/config/welcome/dmj-welcome.sh" config/includes.chroot/usr/local/bin/dmj-welcome.sh
+  chmod +x config/includes.chroot/usr/local/bin/dmj-welcome.sh
+
+  SKEL="config/includes.chroot/etc/skel"
+  mkdir -p "${SKEL}/.config/autostart"
+  cat > "${SKEL}/.config/autostart/dmj-welcome.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=DMJ OS Welcome
+Comment=One-time welcome screen
+Exec=/usr/local/bin/dmj-welcome.sh
+X-GNOME-Autostart-enabled=true
+EOF
+else
+  echo "==> Skipping first-boot welcome screen (INCLUDE_WELCOME_SCREEN=false)"
+fi
+
+# ---------------------------------------------------------------------------
 # 4. Build
 # ---------------------------------------------------------------------------
 echo "==> Running live-build"
@@ -291,7 +387,7 @@ if [[ -z "${ISO_FILE}" ]]; then
   exit 1
 fi
 
-FINAL_NAME="${OS_ID}-${VERSION_NUMBER}-${VERSION_CODENAME,,}.iso"
+FINAL_NAME="${OS_ID}-${VERSION_NUMBER}-${VERSION_CODENAME,,}${BUILD_VARIANT_SUFFIX}.iso"
 cp "${ISO_FILE}" "${OUT_DIR}/${FINAL_NAME}"
 
 echo "==> Build complete: ${OUT_DIR}/${FINAL_NAME}"

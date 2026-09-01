@@ -7,6 +7,14 @@ on:
         description: "Release codename"
         required: false
         default: "Ashen"
+      variant:
+        description: "Build variant"
+        required: false
+        type: choice
+        default: "base"
+        options:
+          - base
+          - macos-deluxe
 
   push:
     branches:
@@ -70,9 +78,18 @@ jobs:
             build/build-dmj-os.sh
 
       - name: Run DMJ OS build
+        env:
+          BUILD_VARIANT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.variant || 'base' }}
         run: |
           set -euxo pipefail
           export PATH="/usr/local/bin:$PATH"
+
+          if [[ "$BUILD_VARIANT" == "macos-deluxe" ]]; then
+            export INCLUDE_MACOS_THEME=true
+            export INCLUDE_WALLPAPER=true
+            export INCLUDE_WELCOME_SCREEN=true
+            export INCLUDE_DESKTOP_APPS=true
+          fi
 
           echo "Checking build directory..."
           ls -la ./build/
@@ -80,7 +97,13 @@ jobs:
           lb --version
 
           chmod +x ./build/build-dmj-os.sh
-          sudo env PATH="$PATH" bash ./build/build-dmj-os.sh
+          sudo env \
+            PATH="$PATH" \
+            INCLUDE_MACOS_THEME="${INCLUDE_MACOS_THEME:-false}" \
+            INCLUDE_WALLPAPER="${INCLUDE_WALLPAPER:-false}" \
+            INCLUDE_WELCOME_SCREEN="${INCLUDE_WELCOME_SCREEN:-false}" \
+            INCLUDE_DESKTOP_APPS="${INCLUDE_DESKTOP_APPS:-false}" \
+            bash ./build/build-dmj-os.sh
 
       - name: Check ISO output
         run: |
@@ -95,7 +118,7 @@ jobs:
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dmj-os-${{ inputs.version_codename || 'Ashen' }}
+          name: dmj-os-${{ inputs.version_codename || 'Ashen' }}${{ (inputs.variant == 'macos-deluxe' && '-macos') || '' }}
           path: out/*.iso
           if-no-files-found: error
           retention-days: 14
