@@ -35,6 +35,7 @@ jobs:
             git \
             make \
             gettext \
+            po4a \
             debootstrap \
             debian-archive-keyring \
             xorriso \

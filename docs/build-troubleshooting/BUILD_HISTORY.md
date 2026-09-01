@@ -118,7 +118,58 @@ The next GitHub Actions build should now be able to run `msgfmt` and continue pa
 
 ---
 
-## Current Workflow Strategy
+## Issue 4: `make install` fails building manpages — `po4a: command not found`
+
+### Error
+
+```text
+make[1]: Entering directory '/tmp/live-build/manpages'
+Checking the integrity of .po files .................. done!
+E: po4a - command not found
+I: po4a can be obtained from https://po4a.org
+I: On Debian based systems, po4a can be installed with 'apt-get install po4a'.
+make[1]: *** [Makefile:42: build] Error 1
+make[1]: Leaving directory '/tmp/live-build/manpages'
+make: *** [Makefile:56: install] Error 2
+```
+
+### Cause
+
+`live-build`'s `make install` target also builds and installs translated
+manpages, which requires `po4a` to process the `.po` translation files.
+The GitHub Actions workflow installed `gettext` (fixing Issue 2's
+`msgfmt` error) but not `po4a`, which is a separate package.
+
+### Fix
+
+Added `po4a` to the workflow's dependency installation step:
+
+```text
+sudo apt-get install -y \
+  git \
+  make \
+  gettext \
+  po4a \
+  debootstrap \
+  debian-archive-keyring \
+  xorriso \
+  isolinux \
+  syslinux-common \
+  wget \
+  rsync \
+  cpio \
+  bzip2 \
+  xz-utils \
+  gzip
+```
+
+### Result
+
+Pending — next workflow run should get past the `live-build`
+installation stage.
+
+---
+
 
 The DMJ OS GitHub Actions workflow now:
 
