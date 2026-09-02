@@ -74,11 +74,43 @@ your connection and machine. Output ISO lands in `out/`, named with a
 
 ## 4. Test it
 
+Interactively, with a display:
 ```bash
 qemu-system-x86_64 -m 2048 -cdrom out/dmjos-1.0-ashen.iso
 # or, for a deluxe build:
 qemu-system-x86_64 -m 2048 -cdrom out/dmjos-1.0-ashen-macos.iso
 ```
+
+Headlessly (no display needed — see "Automated boot preview" below):
+```bash
+pip install --break-system-packages pillow
+python3 tools/qemu-preview/capture_boot_screenshots.py out/dmjos-1.0-ashen.iso screenshots/
+```
+
+## Automated boot preview (no local machine, no display)
+
+There's no realistic "paste your ISO into a website and watch it boot"
+tool for a multi-GB custom Debian live image — the browser-based x86
+emulators (copy.sh, v86, etc.) are built for tiny DOS/toy Linux images and
+won't handle this. Instead, every GitHub Actions run boots the ISO
+headlessly in QEMU right after building it and takes screenshots at a few
+points during boot — proof the Plymouth splash is actually rendering,
+with zero local setup.
+
+After a workflow run finishes: **Artifacts** → download the
+`*-boot-screenshots` artifact → a handful of PNGs showing the boot at
+different timestamps. This step never fails the overall build (it's
+`continue-on-error`) — if it has trouble, the ISO artifact is still there
+as the source of truth.
+
+The same script (`tools/qemu-preview/capture_boot_screenshots.py`) runs
+identically on a local Linux machine with QEMU + Pillow installed — see
+above.
+
+For genuinely *interactive* live viewing (clicking around the actual
+desktop from a browser, not just static screenshots), that needs a VNC
+setup — not built here, but doable via a temporary cloud VM or GitHub
+Codespaces running QEMU with a noVNC web viewer, if you want that next.
 
 ## What's included
 
@@ -86,6 +118,7 @@ qemu-system-x86_64 -m 2048 -cdrom out/dmjos-1.0-ashen-macos.iso
 - `config/plymouth/dmj-cinematic/` — the custom animated boot splash (wired in by default)
 - `config/wallpaper/` — the deluxe build's default desktop wallpaper + generator script
 - `config/welcome/` — the deluxe build's first-boot welcome dialog script
+- `tools/qemu-preview/` — headless boot screenshot capture (see "Automated boot preview" above)
 - `docs/` — a running log of real build issues hit in CI and how they were fixed
 
 ## Boot splash: "DMJ Cinematic"

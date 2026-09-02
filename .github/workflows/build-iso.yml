@@ -115,6 +115,31 @@ jobs:
             exit 1
           fi
 
+      - name: Capture boot screenshots
+        # Boots the ISO headlessly in QEMU and screenshots it at a few
+        # timestamps, mainly to confirm the Plymouth boot splash is
+        # actually rendering — no interactive access needed. Never fails
+        # the whole workflow: if this step has trouble, the ISO itself
+        # (uploaded separately below) is still the source of truth.
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+          sudo apt-get install -y qemu-system-x86 qemu-utils
+          pip install --break-system-packages --quiet pillow
+
+          ISO_FILE="$(find ./out -maxdepth 1 -type f -name '*.iso' -print -quit)"
+          mkdir -p screenshots
+          python3 tools/qemu-preview/capture_boot_screenshots.py "$ISO_FILE" screenshots
+
+      - name: Upload boot screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmj-os-${{ inputs.version_codename || 'Ashen' }}${{ (inputs.variant == 'macos-deluxe' && '-macos') || '' }}-boot-screenshots
+          path: screenshots/*.png
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
