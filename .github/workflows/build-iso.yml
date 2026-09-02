@@ -54,7 +54,8 @@ jobs:
             cpio \
             bzip2 \
             xz-utils \
-            gzip
+            gzip \
+            ffmpeg
 
       - name: Install current Debian Live build tools
         run: |
@@ -115,12 +116,14 @@ jobs:
             exit 1
           fi
 
-      - name: Capture boot screenshots
-        # Boots the ISO headlessly in QEMU and screenshots it at a few
-        # timestamps, mainly to confirm the Plymouth boot splash is
-        # actually rendering — no interactive access needed. Never fails
-        # the whole workflow: if this step has trouble, the ISO itself
-        # (uploaded separately below) is still the source of truth.
+      - name: Capture boot video + screenshots
+        # Boots the ISO headlessly in QEMU, samples the framebuffer every
+        # few seconds throughout boot, and assembles those frames into an
+        # actual MP4 — plus saves a few named milestone stills — so there's
+        # visual proof of the Plymouth splash and boot progression without
+        # needing a display or any interactivity. Never fails the whole
+        # workflow: if this step has trouble, the ISO itself (uploaded
+        # separately below) is still the source of truth.
         continue-on-error: true
         run: |
           set -euxo pipefail
@@ -128,15 +131,20 @@ jobs:
           pip install --break-system-packages --quiet pillow
 
           ISO_FILE="$(find ./out -maxdepth 1 -type f -name '*.iso' -print -quit)"
-          mkdir -p screenshots
-          python3 tools/qemu-preview/capture_boot_screenshots.py "$ISO_FILE" screenshots
+          mkdir -p boot-preview
+          # 240s window, 3s between frames (~80 frames) — long enough to
+          # cover GRUB -> Plymouth -> hopefully desktop under non-KVM
+          # emulation without making the artifact huge.
+          python3 tools/qemu-preview/capture_boot_screenshots.py "$ISO_FILE" boot-preview 240 3
 
-      - name: Upload boot screenshots
+      - name: Upload boot video + screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dmj-os-${{ inputs.version_codename || 'Ashen' }}${{ (inputs.variant == 'macos-deluxe' && '-macos') || '' }}-boot-screenshots
-          path: screenshots/*.png
+          name: dmj-os-${{ inputs.version_codename || 'Ashen' }}${{ (inputs.variant == 'macos-deluxe' && '-macos') || '' }}-boot-preview
+          path: |
+            boot-preview/boot_video.mp4
+            boot-preview/milestone_*.png
           if-no-files-found: warn
           retention-days: 14
 

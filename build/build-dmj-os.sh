@@ -388,7 +388,14 @@ if [[ -z "${ISO_FILE}" ]]; then
 fi
 
 FINAL_NAME="${OS_ID}-${VERSION_NUMBER}-${VERSION_CODENAME,,}${BUILD_VARIANT_SUFFIX}.iso"
-cp "${ISO_FILE}" "${OUT_DIR}/${FINAL_NAME}"
+
+REBRAND_SCRIPT="${WORKDIR}/tools/iso-rebrand/rebrand_grub.sh"
+if [[ "${INCLUDE_PLYMOUTH_THEME}" == "true" && -x "${REBRAND_SCRIPT}" ]]; then
+  echo "==> Rebranding GRUB boot menu text (Debian GNU/Linux -> ${OS_NAME})"
+  bash "${REBRAND_SCRIPT}" "${ISO_FILE}" "${OUT_DIR}/${FINAL_NAME}" "${OS_NAME}" "${VERSION_CODENAME}"
+else
+  cp "${ISO_FILE}" "${OUT_DIR}/${FINAL_NAME}"
+fi
 
 echo "==> Build complete: ${OUT_DIR}/${FINAL_NAME}"
 ls -lh "${OUT_DIR}/${FINAL_NAME}"

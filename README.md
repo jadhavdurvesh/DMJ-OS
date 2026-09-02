@@ -84,7 +84,8 @@ qemu-system-x86_64 -m 2048 -cdrom out/dmjos-1.0-ashen-macos.iso
 Headlessly (no display needed — see "Automated boot preview" below):
 ```bash
 pip install --break-system-packages pillow
-python3 tools/qemu-preview/capture_boot_screenshots.py out/dmjos-1.0-ashen.iso screenshots/
+python3 tools/qemu-preview/capture_boot_screenshots.py out/dmjos-1.0-ashen.iso boot-preview/ 240 3
+# -> boot-preview/boot_video.mp4, plus boot-preview/milestone_*.png
 ```
 
 ## Automated boot preview (no local machine, no display)
@@ -93,24 +94,48 @@ There's no realistic "paste your ISO into a website and watch it boot"
 tool for a multi-GB custom Debian live image — the browser-based x86
 emulators (copy.sh, v86, etc.) are built for tiny DOS/toy Linux images and
 won't handle this. Instead, every GitHub Actions run boots the ISO
-headlessly in QEMU right after building it and takes screenshots at a few
-points during boot — proof the Plymouth splash is actually rendering,
-with zero local setup.
+headlessly in QEMU right after building it, presses Enter to get past the
+GRUB menu (it waits indefinitely otherwise), samples the framebuffer every
+few seconds for several minutes, and assembles those frames into an actual
+**MP4 video** of the boot — plus a few named milestone stills — with zero
+local setup.
 
 After a workflow run finishes: **Artifacts** → download the
-`*-boot-screenshots` artifact → a handful of PNGs showing the boot at
-different timestamps. This step never fails the overall build (it's
-`continue-on-error`) — if it has trouble, the ISO artifact is still there
-as the source of truth.
+`*-boot-preview` artifact → `boot_video.mp4` (watch the real boot,
+GRUB → Plymouth → whatever it reaches next) and a handful of
+`milestone_*.png` stills for quick viewing without opening the video.
+This step never fails the overall build (it's `continue-on-error`) — if
+it has trouble, the ISO artifact is still there as the source of truth.
 
 The same script (`tools/qemu-preview/capture_boot_screenshots.py`) runs
-identically on a local Linux machine with QEMU + Pillow installed — see
-above.
+identically on a local Linux machine with QEMU + Pillow + ffmpeg
+installed — see above. Usage: `capture_boot_screenshots.py <iso>
+<output-dir> [duration_s] [interval_s]`.
 
 For genuinely *interactive* live viewing (clicking around the actual
-desktop from a browser, not just static screenshots), that needs a VNC
+desktop from a browser in real time, not a recording), that needs a VNC
 setup — not built here, but doable via a temporary cloud VM or GitHub
 Codespaces running QEMU with a noVNC web viewer, if you want that next.
+
+## GRUB boot menu rebranding
+
+`live-build`'s default GRUB menu shows "Debian GNU/Linux \<version\>
+(\<codename\>)" — there's no reliable, version-agnostic way to override
+that from the live-build config side (the exact template location differs
+between live-build versions, and CI builds live-build from source, so
+pinning to one version's internal paths is fragile). Instead,
+`tools/iso-rebrand/rebrand_grub.sh` patches the text directly inside the
+**finished ISO**: it finds every `grub.cfg` on the image, replaces
+"Debian GNU/Linux" with "DMJ OS" (and the codename), and writes each file
+back using `xorriso`'s `-boot_image any replay`, which explicitly
+preserves the El Torito boot catalog (BIOS + UEFI boot images) unchanged.
+
+This runs automatically as the last step of `build-dmj-os.sh` whenever
+`INCLUDE_PLYMOUTH_THEME=true` (the default). Verified end-to-end —
+including actually booting the patched ISO in QEMU to confirm it still
+works — before being wired in. If it ever fails for any reason, it falls
+back to copying the ISO through unbranded rather than breaking the build
+(rebranding is cosmetic; it should never be why a build fails).
 
 ## What's included
 
@@ -118,7 +143,8 @@ Codespaces running QEMU with a noVNC web viewer, if you want that next.
 - `config/plymouth/dmj-cinematic/` — the custom animated boot splash (wired in by default)
 - `config/wallpaper/` — the deluxe build's default desktop wallpaper + generator script
 - `config/welcome/` — the deluxe build's first-boot welcome dialog script
-- `tools/qemu-preview/` — headless boot screenshot capture (see "Automated boot preview" above)
+- `tools/qemu-preview/` — headless boot video/screenshot capture (see "Automated boot preview" above)
+- `tools/iso-rebrand/` — GRUB menu text rebranding (see "GRUB boot menu rebranding" above)
 - `docs/` — a running log of real build issues hit in CI and how they were fixed
 
 ## Boot splash: "DMJ Cinematic"
