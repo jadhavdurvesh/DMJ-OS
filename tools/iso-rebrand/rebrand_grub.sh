@@ -99,6 +99,18 @@ for iso_path in "${GRUB_PATHS[@]}"; do
     sed -i -e "s/(bookworm)/(${CODENAME})/g" "$local_file"
   fi
 
+  # Diagnostic only (not yet acted on): log any image/theme files this
+  # grub.cfg references, so a future run's log tells us the real filename
+  # of the background graphic (the yellow icon shown in the boot menu)
+  # instead of guessing — needed before that can be replaced too.
+  refs="$(grep -oE '(background_image|set theme=)[^ ]*[[:space:]]*\S*\.(png|tga|jpg|jpeg|txt)' "$local_file" || true)"
+  if [[ -n "$refs" ]]; then
+    echo "==> Image/theme references found in ${iso_path} (for future logo replacement):"
+    echo "$refs" | sed 's/^/    /'
+  else
+    echo "==> No background_image/theme references found in ${iso_path}"
+  fi
+
   echo "==> Writing patched ${iso_path} back into the ISO"
   tmp_out="${ISO_OUT}.tmp"
   if xorriso -indev "$ISO_OUT" -outdev "$tmp_out" \

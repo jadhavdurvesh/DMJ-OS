@@ -151,10 +151,48 @@ works — before being wired in. If it ever fails for any reason, it falls
 back to copying the ISO through unbranded rather than breaking the build
 (rebranding is cosmetic; it should never be why a build fails).
 
+**Not yet done:** the yellow icon graphic shown in the GRUB menu itself
+(separate from the text) isn't replaced yet — its exact filename inside
+the ISO isn't known without seeing a real build. The rebrand script now
+scans the patched `grub.cfg` for `background_image`/`set theme=`
+references and logs them, so the next real CI log will show the actual
+path, which is needed before that can be swapped for the DMJ OS mark too.
+
+## System branding: menu icon + distributor logo
+
+Beyond the boot splash and wallpaper watermark, the real logo mark (the
+circular symbol, auto-cropped from `logo.png` — the wordmark text isn't
+usable as a square icon) is installed system-wide:
+
+- **`/usr/share/pixmaps/distributor-logo.png`** — the standard path many
+  Linux "about this system" tools check for distro branding. Fixed path,
+  placed directly at build time, no runtime discovery needed.
+- **`/usr/share/icons/hicolor/*/apps/start-here.png`** at all standard
+  sizes (16 through 256px) — the icon name most desktop environments,
+  including XFCE's application menu button, fall back to for distro
+  branding. This is how Ubuntu/Mint/etc. brand their start menu icon
+  without per-app configuration.
+- **The panel's whiskermenu button icon** specifically — XFCE assigns
+  panel plugin IDs (e.g. `plugin-14`) per-install, not at a fixed path,
+  so (same lesson as the wallpaper monitor-name bug) a build-time guess
+  won't reliably match. `config/branding/dmj-set-menu-icon.sh` runs at
+  login, discovers the real whiskermenu plugin ID via `xfconf-query`,
+  and points its icon at the mark. Verified against a mock `xfconf-query`
+  with realistic plugin IDs and mixed plugin types (systray, tasklist)
+  before trusting it — confirmed it only touches the actual menu plugin.
+
+Controlled by `INCLUDE_SYSTEM_BRANDING` (default `true` — this is basic
+distro identity, not a deluxe extra, so it's on even in the base build).
+Regenerate the icon set after changing the logo:
+```bash
+python3 config/branding/generate_icons.py
+```
+
 ## What's included
 
 - `build/build-dmj-os.sh` — main build script (debootstrap config, branding, Plymouth theme, live-build invocation)
 - `config/plymouth/dmj-cinematic/` — the custom animated boot splash (wired in by default)
+- `config/branding/` — system-wide logo/icon branding (menu icon, distributor logo) — see above
 - `config/wallpaper/` — the deluxe build's default desktop wallpaper + generator script
 - `config/welcome/` — the deluxe build's first-boot welcome dialog script
 - `tools/qemu-preview/` — headless boot video/screenshot capture (see "Automated boot preview" above)

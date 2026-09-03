@@ -27,6 +27,7 @@ ARCH="amd64"
 # reliable as the current working configuration; enable via env vars, e.g.:
 #   INCLUDE_PLYMOUTH_THEME=true sudo -E ./build/build-dmj-os.sh
 INCLUDE_PLYMOUTH_THEME="${INCLUDE_PLYMOUTH_THEME:-true}"
+INCLUDE_SYSTEM_BRANDING="${INCLUDE_SYSTEM_BRANDING:-true}"
 INCLUDE_MACOS_THEME="${INCLUDE_MACOS_THEME:-false}"
 INCLUDE_WALLPAPER="${INCLUDE_WALLPAPER:-false}"
 INCLUDE_WELCOME_SCREEN="${INCLUDE_WELCOME_SCREEN:-false}"
@@ -120,6 +121,7 @@ firmware-linux
 firmware-misc-nonfree
 plymouth
 plymouth-themes
+xfconf
 git
 curl
 vim
@@ -145,12 +147,6 @@ fi
 if [[ "${INCLUDE_WELCOME_SCREEN}" == "true" ]]; then
   cat >> config/package-lists/dmj-os.list.chroot <<'EOF'
 zenity
-EOF
-fi
-
-if [[ "${INCLUDE_WALLPAPER}" == "true" ]]; then
-  cat >> config/package-lists/dmj-os.list.chroot <<'EOF'
-xfconf
 EOF
 fi
 
@@ -209,6 +205,58 @@ EOF
   chmod +x config/hooks/normal/0100-plymouth-theme.hook.chroot
 else
   echo "==> Skipping Plymouth boot theme (INCLUDE_PLYMOUTH_THEME=false)"
+fi
+
+# ---------------------------------------------------------------------------
+# 3a2. System branding: distributor logo + application menu icon
+# ---------------------------------------------------------------------------
+if [[ "${INCLUDE_SYSTEM_BRANDING}" == "true" ]]; then
+  echo "==> Including system branding (distributor logo + menu icon)"
+
+  ICONS_SRC="${WORKDIR}/config/branding/generated"
+  if [[ ! -d "${ICONS_SRC}" ]]; then
+    echo "ERROR: ${ICONS_SRC} not found. Run:" >&2
+    echo "  python3 config/branding/generate_icons.py" >&2
+    echo "before building with INCLUDE_SYSTEM_BRANDING=true." >&2
+    exit 1
+  fi
+
+  # distributor-logo.png: a fixed, well-known path, so no runtime
+  # discovery needed — safe to place directly at build time.
+  mkdir -p config/includes.chroot/usr/share/pixmaps
+  cp "${ICONS_SRC}/distributor-logo.png" \
+     config/includes.chroot/usr/share/pixmaps/distributor-logo.png
+
+  # hicolor "start-here" icon set: the standard fallback icon name most
+  # desktop environments (including XFCE's app menu) use for distro
+  # branding, resolved automatically via icon theme lookup.
+  mkdir -p config/includes.chroot/usr/share/icons/hicolor
+  cp -r "${ICONS_SRC}/hicolor/." config/includes.chroot/usr/share/icons/hicolor/
+
+  # The panel's whiskermenu button icon isn't controlled by icon-theme
+  # fallback the way "start-here" is — it needs an explicit xfconf
+  # property set to a specific plugin ID, which XFCE assigns per-install
+  # (same lesson as the wallpaper monitor-name bug: don't guess it at
+  # build time). Install a login-time script that discovers the real
+  # plugin ID via xfconf-query instead.
+  mkdir -p config/includes.chroot/usr/local/bin
+  cp "${WORKDIR}/config/branding/dmj-set-menu-icon.sh" \
+     config/includes.chroot/usr/local/bin/dmj-set-menu-icon.sh
+  chmod +x config/includes.chroot/usr/local/bin/dmj-set-menu-icon.sh
+
+  SKEL="config/includes.chroot/etc/skel"
+  mkdir -p "${SKEL}/.config/autostart"
+  cat > "${SKEL}/.config/autostart/dmj-set-menu-icon.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=DMJ OS Menu Icon
+Comment=Sets the application menu button icon (runs every login, idempotent)
+Exec=/usr/local/bin/dmj-set-menu-icon.sh
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+EOF
+else
+  echo "==> Skipping system branding (INCLUDE_SYSTEM_BRANDING=false)"
 fi
 
 # ---------------------------------------------------------------------------
