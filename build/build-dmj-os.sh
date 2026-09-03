@@ -289,7 +289,7 @@ install_component() {
     return 1
   fi
 
-  ( cd "$workdir" && sh install.sh $install_args )
+  ( cd "$workdir" && bash install.sh $install_args )
   status=$?
   rm -rf "$workdir"
 
