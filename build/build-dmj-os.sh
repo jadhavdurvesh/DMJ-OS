@@ -148,6 +148,12 @@ zenity
 EOF
 fi
 
+if [[ "${INCLUDE_WALLPAPER}" == "true" ]]; then
+  cat >> config/package-lists/dmj-os.list.chroot <<'EOF'
+xfconf
+EOF
+fi
+
 # ---------------------------------------------------------------------------
 # 3. DMJ OS branding
 # ---------------------------------------------------------------------------
@@ -212,30 +218,58 @@ if [[ "${INCLUDE_MACOS_THEME}" == "true" ]]; then
   echo "==> Including macOS-style desktop theme (WhiteSur + Plank)"
 
   # Clones and installs the theme/icon packs at build time — needs network
-  # access inside the chroot to reach GitHub.
+  # access inside the chroot to reach GitHub. Each component installs
+  # independently (one failing doesn't block the others) and prints a
+  # clear PASS/FAIL, since silent partial failures here are exactly what
+  # caused icons/cursors to not show up in a prior build: the icon theme
+  # install had no failure fallback, so under 'set -e' a failure there
+  # silently killed the rest of the script before cursors ever installed.
   cat > config/hooks/normal/0200-macos-theme.hook.chroot <<'EOF'
 #!/bin/sh
-set -e
-echo "==> Installing WhiteSur GTK theme"
-git clone --depth=1 https://github.com/vinceliuice/WhiteSur-gtk-theme.git /tmp/WhiteSur-gtk-theme
-cd /tmp/WhiteSur-gtk-theme
-./install.sh -d /usr/share/themes || true
-cd /
-rm -rf /tmp/WhiteSur-gtk-theme
+set -u
 
-echo "==> Installing WhiteSur icon theme"
-git clone --depth=1 https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/WhiteSur-icon-theme
-cd /tmp/WhiteSur-icon-theme
-./install.sh -d /usr/share/icons
-cd /
-rm -rf /tmp/WhiteSur-icon-theme
+install_component() {
+  name="$1"
+  repo_url="$2"
+  install_args="$3"
+  workdir="/tmp/${name}"
 
-echo "==> Installing WhiteSur cursors"
-git clone --depth=1 https://github.com/vinceliuice/WhiteSur-cursors.git /tmp/WhiteSur-cursors
-cd /tmp/WhiteSur-cursors
-./install.sh -d /usr/share/icons || true
-cd /
-rm -rf /tmp/WhiteSur-cursors
+  echo "==> Installing ${name}"
+  rm -rf "$workdir"
+  if ! git clone --depth=1 "$repo_url" "$workdir"; then
+    echo "FAIL: ${name} — git clone failed"
+    return 1
+  fi
+
+  ( cd "$workdir" && sh install.sh $install_args )
+  status=$?
+  rm -rf "$workdir"
+
+  if [ "$status" -eq 0 ]; then
+    echo "OK: ${name} installed"
+  else
+    echo "FAIL: ${name} — install.sh exited with status ${status}"
+  fi
+  return "$status"
+}
+
+install_component "WhiteSur-gtk-theme" \
+  "https://github.com/vinceliuice/WhiteSur-gtk-theme.git" \
+  "-d /usr/share/themes"
+
+install_component "WhiteSur-icon-theme" \
+  "https://github.com/vinceliuice/WhiteSur-icon-theme.git" \
+  "-d /usr/share/icons"
+
+install_component "WhiteSur-cursors" \
+  "https://github.com/vinceliuice/WhiteSur-cursors.git" \
+  "-d /usr/share/icons"
+
+echo "==> macOS theme component install finished (see OK/FAIL lines above for per-component status)"
+# Exit 0 regardless of individual component results — a partially themed
+# desktop (e.g. GTK theme but not icons) is still strictly better than
+# failing the whole ISO build over a cosmetic extra.
+exit 0
 EOF
   chmod +x config/hooks/normal/0200-macos-theme.hook.chroot
 
@@ -316,32 +350,27 @@ if [[ "${INCLUDE_WALLPAPER}" == "true" ]]; then
   mkdir -p config/includes.chroot/usr/share/backgrounds/dmj-os
   cp "${WALLPAPER_SRC}" config/includes.chroot/usr/share/backgrounds/dmj-os/wallpaper.png
 
-  SKEL="config/includes.chroot/etc/skel"
-  mkdir -p "${SKEL}/.config/xfce4/xfconf/xfce-perchannel-xml"
+  # A static xfce4-desktop.xml with guessed monitor property names
+  # (monitor0, monitorVirtual1, etc.) does NOT reliably work — XFCE names
+  # these based on actual detected display hardware at runtime, which
+  # varies by GPU driver/VM and doesn't match a build-time guess. Instead,
+  # install a script that queries xfconf for the real property names at
+  # login time and sets the wallpaper on whatever actually exists.
+  mkdir -p config/includes.chroot/usr/local/bin
+  cp "${WORKDIR}/config/wallpaper/dmj-set-wallpaper.sh" \
+     config/includes.chroot/usr/local/bin/dmj-set-wallpaper.sh
+  chmod +x config/includes.chroot/usr/local/bin/dmj-set-wallpaper.sh
 
-  # xfce4-desktop's monitor/workspace property names vary by hardware, so
-  # this sets the common defaults; XFCE falls back sanely if a specific
-  # monitor property doesn't match at runtime.
-  cat > "${SKEL}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml" <<'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<channel name="xfce4-desktop" version="1.0">
-  <property name="backdrop" type="empty">
-    <property name="screen0" type="empty">
-      <property name="monitor0" type="empty">
-        <property name="workspace0" type="empty">
-          <property name="last-image" type="string" value="/usr/share/backgrounds/dmj-os/wallpaper.png"/>
-          <property name="image-style" type="int" value="5"/>
-        </property>
-      </property>
-      <property name="monitorVirtual1" type="empty">
-        <property name="workspace0" type="empty">
-          <property name="last-image" type="string" value="/usr/share/backgrounds/dmj-os/wallpaper.png"/>
-          <property name="image-style" type="int" value="5"/>
-        </property>
-      </property>
-    </property>
-  </property>
-</channel>
+  SKEL="config/includes.chroot/etc/skel"
+  mkdir -p "${SKEL}/.config/autostart"
+  cat > "${SKEL}/.config/autostart/dmj-set-wallpaper.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=DMJ OS Wallpaper
+Comment=Sets the default DMJ OS wallpaper (runs every login, idempotent)
+Exec=/usr/local/bin/dmj-set-wallpaper.sh
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
 EOF
 else
   echo "==> Skipping default wallpaper (INCLUDE_WALLPAPER=false)"

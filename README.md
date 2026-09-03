@@ -213,6 +213,30 @@ at once via the GitHub Actions `variant: macos-deluxe` option (see below).
 All of the above are applied via `/etc/skel`, so a fresh live session boots
 straight into the fully configured desktop with no manual setup.
 
+**Fixed bugs from real testing** (a deluxe build's screenshot showed the
+welcome dialog working correctly, but the stock Debian wallpaper and
+default icons instead of ours):
+
+- **Wallpaper wasn't applying at all.** The original approach wrote a
+  static `xfce4-desktop.xml` with guessed monitor property names
+  (`monitor0`, `monitorVirtual1`). XFCE actually names these based on the
+  real detected display hardware at runtime (varies by GPU driver/VM),
+  so the guess essentially never matched anything. Fixed by replacing it
+  with `config/wallpaper/dmj-set-wallpaper.sh`, which runs at login and
+  asks `xfconf-query` directly what monitor/workspace properties exist
+  right now, then sets the wallpaper on whichever ones actually do.
+  Verified against a mock `xfconf-query` returning realistic
+  (non-guessable) property names before trusting it.
+- **Icon theme silently failing to install.** The `WhiteSur-icon-theme`
+  install step had no failure fallback, unlike the GTK theme and cursor
+  steps next to it — under the hook's `set -e`, if that one install
+  failed for any reason, it silently killed the rest of the script
+  before cursors ever got a chance to install too. Rewrote the hook so
+  each of the three components (GTK theme, icons, cursors) installs
+  independently with a clear `OK:`/`FAIL:` line, so one failing never
+  blocks the others and a future log will show exactly which component
+  had trouble instead of a silent partial failure.
+
 ## History
 
 This project originally included a CLI AI assistant (`dmj-ai`) backed by
