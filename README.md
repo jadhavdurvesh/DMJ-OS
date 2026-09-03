@@ -101,9 +101,23 @@ few seconds for several minutes, and assembles those frames into an actual
 local setup.
 
 After a workflow run finishes: **Artifacts** → download the
-`*-boot-preview` artifact → `boot_video.mp4` (watch the real boot,
-GRUB → Plymouth → whatever it reaches next) and a handful of
-`milestone_*.png` stills for quick viewing without opening the video.
+`*-boot-preview` artifact → `boot_video.mp4` (the real capture) and
+`boot_video_boosted.mp4` (brightness/contrast pushed up — several of this
+theme's own colors are intentionally very dark near-black gradients, which
+is correct but can look like an empty black frame at a glance; the boosted
+copy is a viewing aid only, never the source of truth). Same pairing for
+the `milestone_*.png` / `milestone_*_boosted.png` stills.
+
+**Known display-capture caveat:** the display device used for capture
+(`-vga virtio`) was chosen after finding that the more common `-vga std`
+gets stuck returning byte-identical stale frames for 30+ seconds during a
+real Linux kernel's display mode transition — not a genuinely frozen boot,
+just a capture-tooling limitation. The script now detects and logs this
+("byte-identical to the previous N frames") if it ever recurs, so a future
+run will say so directly in the log rather than requiring a manual pixel
+diff to figure out. If you see that note in a run's log, treat that
+stretch of the video with suspicion regardless of which device is in use.
+
 This step never fails the overall build (it's `continue-on-error`) — if
 it has trouble, the ISO artifact is still there as the source of truth.
 

@@ -144,6 +144,7 @@ jobs:
           name: dmj-os-${{ inputs.version_codename || 'Ashen' }}${{ (inputs.variant == 'macos-deluxe' && '-macos') || '' }}-boot-preview
           path: |
             boot-preview/boot_video.mp4
+            boot-preview/boot_video_boosted.mp4
             boot-preview/milestone_*.png
           if-no-files-found: warn
           retention-days: 14

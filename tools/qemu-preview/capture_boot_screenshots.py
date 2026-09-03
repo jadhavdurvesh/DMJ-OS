@@ -24,6 +24,7 @@ import subprocess
 import sys
 import time
 import os
+import hashlib
 from pathlib import Path
 
 MONITOR_PORT = 55555
@@ -102,6 +103,31 @@ def assemble_video(frames_dir, out_path, fps_in, fps_out=10):
     return True
 
 
+def assemble_boosted_video(frames_dir, out_path, fps_in, fps_out=10):
+    """
+    Same as assemble_video, but with brightness/contrast pushed up. Several
+    of this theme's own colors are intentionally very dark (near-black
+    gradients), which is correct in the real video but can look like an
+    empty black frame at a glance. This boosted copy is a viewing aid only
+    — never treat it as the authoritative capture.
+    """
+    pattern = str(frames_dir / "frame_%04d.png")
+    cmd = [
+        "ffmpeg", "-y",
+        "-framerate", str(fps_in),
+        "-i", pattern,
+        "-vf", f"fps={fps_out},eq=brightness=0.15:contrast=1.6,format=yuv420p",
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        str(out_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print("WARNING: boosted ffmpeg encode failed:", result.stderr[-1000:], file=sys.stderr)
+        return False
+    return True
+
+
 def main():
     if len(sys.argv) < 3:
         print(
@@ -134,7 +160,13 @@ def main():
         "-cdrom", str(iso_path),
         "-boot", "d",
         "-display", "none",
-        "-vga", "std",
+        "-vga", "virtio",  # far more reliable for screendump across guest
+                           # KMS/resolution changes than legacy "-vga std"
+                           # (confirmed via reproducible testing — std got
+                           # stuck returning identical stale frames for 30+
+                           # seconds during a real Linux kernel's display
+                           # mode transition; virtio-gpu is the standard
+                           # choice for headless Linux boot capture tooling)
         "-no-reboot",
         "-monitor", f"telnet:127.0.0.1:{MONITOR_PORT},server,nowait",
     ]
@@ -149,6 +181,9 @@ def main():
 
     frame_count = 0
     milestones_saved = {}
+    last_hash = None
+    stuck_run = 0
+    stuck_reported = set()
 
     try:
         time.sleep(5)  # let the monitor socket come up
@@ -161,6 +196,30 @@ def main():
             png_path = frames_dir / f"frame_{i:04d}.png"
             monitor_command(f"screendump {ppm_path}")
             if ppm_path.exists():
+                frame_hash = hashlib.sha1(ppm_path.read_bytes()).hexdigest()
+                if frame_hash == last_hash:
+                    stuck_run += 1
+                else:
+                    stuck_run = 0
+                last_hash = frame_hash
+
+                # Flag a long run of byte-identical frames once, when it
+                # first crosses the threshold — this is exactly the symptom
+                # of a display-capture bug (screendump returning stale data
+                # during a guest resolution/mode change) rather than the
+                # guest genuinely not updating the screen for that long.
+                stuck_seconds = stuck_run * interval_s
+                if stuck_seconds >= 15 and i not in stuck_reported:
+                    print(
+                        f"NOTE: frame {i} (t={elapsed:.0f}s) is byte-identical to "
+                        f"the previous {stuck_run} frame(s) ({stuck_seconds:.0f}s of "
+                        f"no change) — if this coincides with a resolution change in "
+                        f"the guest, it may be a stale/stuck capture rather than a "
+                        f"genuinely frozen boot.",
+                        file=sys.stderr,
+                    )
+                    stuck_reported.add(i)
+
                 if ppm_to_png(ppm_path, png_path):
                     frame_count += 1
             else:
@@ -198,13 +257,29 @@ def main():
 
     if frame_count > 1:
         video_path = out_dir / "boot_video.mp4"
+        boosted_path = out_dir / "boot_video_boosted.mp4"
         fps_in = 1.0 / interval_s
         if assemble_video(frames_dir, video_path, fps_in=fps_in):
             print(f"Video written to {video_path}")
         else:
             print("Video assembly failed — individual frames are still available.")
+
+        if assemble_boosted_video(frames_dir, boosted_path, fps_in=fps_in):
+            print(f"Brightness-boosted viewing copy written to {boosted_path} "
+                  f"(viewing aid only — {video_path.name} is the real capture)")
     else:
         print("Not enough frames captured to assemble a video.")
+
+    # Boosted stills alongside each milestone, for the same reason.
+    from PIL import Image, ImageOps
+    for milestone_png in out_dir.glob("milestone_*.png"):
+        try:
+            im = Image.open(milestone_png).convert("RGB")
+            boosted = ImageOps.autocontrast(im, cutoff=0)
+            boosted.save(milestone_png.with_name(milestone_png.stem + "_boosted.png"))
+        except Exception as e:
+            print(f"WARNING: could not create boosted still for {milestone_png.name}: {e}",
+                  file=sys.stderr)
 
 
 if __name__ == "__main__":

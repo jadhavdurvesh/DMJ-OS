@@ -12,14 +12,18 @@
 # every grub.cfg on the image, replaces the "Debian GNU/Linux" branding
 # text, and writes each file back in place using xorriso's -update, with
 # -boot_image any replay to explicitly preserve the El Torito boot catalog
-# (BIOS + UEFI boot images) unchanged. Verified end-to-end (including an
-# actual QEMU boot of the patched result) before being wired into the build.
+# (BIOS + UEFI boot images) unchanged. Verified end-to-end against a real
+# bootable test ISO (grub-mkrescue), including actually booting the
+# patched result in QEMU to confirm both the new text AND working boot.
 #
 # Usage:
 #   rebrand_grub.sh <input.iso> <output.iso> <brand-name> [codename]
 #
 # On any failure, falls back to copying the input ISO through unchanged
 # (rebranding is cosmetic — it must never be the reason a build fails).
+# Every xorriso call's full output is captured to a log and printed in
+# full on failure, so a CI run always shows the real reason rather than
+# a silent, undiagnosable fallback.
 set -uo pipefail
 
 ISO_IN="${1:?Usage: rebrand_grub.sh <input.iso> <output.iso> <brand-name> [codename]}"
@@ -27,8 +31,17 @@ ISO_OUT="${2:?Usage: rebrand_grub.sh <input.iso> <output.iso> <brand-name> [code
 BRAND_NAME="${3:-DMJ OS}"
 CODENAME="${4:-}"
 
+WORKDIR="$(mktemp -d)"
+LOG_FILE="${WORKDIR}/xorriso.log"
+trap 'rm -rf "$WORKDIR"' EXIT
+
 fail_soft() {
   echo "WARNING: $1 — leaving ISO unbranded (copying through unchanged)." >&2
+  if [[ -f "$LOG_FILE" ]]; then
+    echo "----- last xorriso output (for diagnosis) -----" >&2
+    cat "$LOG_FILE" >&2
+    echo "------------------------------------------------" >&2
+  fi
   cp -f "$ISO_IN" "$ISO_OUT"
   exit 0
 }
@@ -36,34 +49,51 @@ fail_soft() {
 command -v xorriso >/dev/null 2>&1 || fail_soft "xorriso not found"
 [[ -f "$ISO_IN" ]] || fail_soft "input ISO not found at $ISO_IN"
 
-WORKDIR="$(mktemp -d)"
-trap 'rm -rf "$WORKDIR"' EXIT
-
 echo "==> Locating grub.cfg file(s) inside $(basename "$ISO_IN")"
+xorriso -indev "$ISO_IN" -find / -name grub.cfg > "$LOG_FILE" 2>&1
+find_status=$?
+echo "----- xorriso -find output -----"
+cat "$LOG_FILE"
+echo "---------------------------------"
+
+if [[ $find_status -ne 0 ]]; then
+  fail_soft "xorriso -find exited with status $find_status"
+fi
+
+# xorriso prints matched paths as their own line, typically single-quoted
+# (e.g. "'/boot/grub/grub.cfg'") but this is tolerant of unquoted output
+# too, in case that format differs by xorriso version.
 mapfile -t GRUB_PATHS < <(
-  xorriso -indev "$ISO_IN" -find / -name grub.cfg 2>/dev/null \
-    | grep -oE "'/[^']*grub\.cfg'" | tr -d "'"
+  grep -oE "'?(/[A-Za-z0-9._/-]*grub\.cfg)'?" "$LOG_FILE" \
+    | tr -d "'" | sort -u
 )
 
 if [[ ${#GRUB_PATHS[@]} -eq 0 ]]; then
-  fail_soft "no grub.cfg found on ISO"
+  fail_soft "no grub.cfg path could be parsed from xorriso -find output above"
 fi
 
-echo "==> Found: ${GRUB_PATHS[*]}"
+echo "==> Found ${#GRUB_PATHS[@]} grub.cfg path(s): ${GRUB_PATHS[*]}"
 cp -f "$ISO_IN" "$ISO_OUT"
 
 i=0
+any_patched=0
 for iso_path in "${GRUB_PATHS[@]}"; do
   i=$((i + 1))
   local_file="${WORKDIR}/grub_${i}.cfg"
 
-  echo "==> Extracting ${iso_path}"
-  if ! xorriso -indev "$ISO_OUT" -osirrox on -extract "$iso_path" "$local_file" >/dev/null 2>&1; then
-    echo "WARNING: failed to extract ${iso_path}, skipping" >&2
+  echo "==> [$i/${#GRUB_PATHS[@]}] Extracting ${iso_path}"
+  if ! xorriso -indev "$ISO_OUT" -osirrox on -extract "$iso_path" "$local_file" > "$LOG_FILE" 2>&1; then
+    echo "WARNING: failed to extract ${iso_path}, skipping this file" >&2
+    cat "$LOG_FILE" >&2
     continue
   fi
 
-  echo "==> Patching branding text in ${iso_path}"
+  if [[ ! -s "$local_file" ]]; then
+    echo "WARNING: extracted ${iso_path} is empty, skipping this file" >&2
+    continue
+  fi
+
+  echo "==> Patching branding text in ${iso_path} (${BRAND_NAME}${CODENAME:+, codename ${CODENAME}})"
   sed -i -e "s/Debian GNU\/Linux/${BRAND_NAME}/g" "$local_file"
   if [[ -n "$CODENAME" ]]; then
     sed -i -e "s/(bookworm)/(${CODENAME})/g" "$local_file"
@@ -73,12 +103,18 @@ for iso_path in "${GRUB_PATHS[@]}"; do
   tmp_out="${ISO_OUT}.tmp"
   if xorriso -indev "$ISO_OUT" -outdev "$tmp_out" \
        -boot_image any replay \
-       -update "$local_file" "$iso_path" >/dev/null 2>&1; then
+       -update "$local_file" "$iso_path" > "$LOG_FILE" 2>&1; then
     mv -f "$tmp_out" "$ISO_OUT"
+    any_patched=1
   else
     echo "WARNING: failed to update ${iso_path} in the ISO, leaving prior state" >&2
+    cat "$LOG_FILE" >&2
     rm -f "$tmp_out"
   fi
 done
+
+if [[ "$any_patched" -eq 0 ]]; then
+  fail_soft "found grub.cfg path(s) but failed to patch any of them (see warnings above)"
+fi
 
 echo "==> Rebranding complete: ${ISO_OUT}"
