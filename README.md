@@ -202,26 +202,51 @@ python3 config/branding/generate_icons.py
 ## Boot splash: "DMJ Cinematic"
 
 A custom Plymouth "script" theme built around the real DMJ OS logo:
-background fades in, the glowing logo scales/fades in (auto-scaled to
-fit the screen regardless of boot resolution), ambient particles drift
-upward in the background, and a thin progress bar fills in sync with
-real boot progress.
+background fades in, a two-layer parallax particle field drifts upward
+(dim/slow "far" particles behind bright/fast "near" ones, for actual
+depth rather than one flat layer), the glow blooms, and the logo pops
+in with a slight overshoot-and-settle bounce rather than a flat linear
+scale — the same reveal technique used in modern app/logo animations.
+A soft light sweep passes once across the scene right after the logo
+settles, and the glow keeps a slow "breathing" pulse for the rest of
+the boot. A thin progress bar fills in sync with real boot progress.
 
 Files:
 - `dmj-cinematic.plymouth` — theme metadata
 - `dmj-cinematic.script` — the animation itself (Plymouth's script language)
 - `images/logo.png`, `images/logo_glow.png` — the real DMJ OS logo + glow variant
-- `images/particle.png` — ambient particle sprite
+- `images/particle.png` — ambient particle sprite (reused for both depth layers)
 - `images/progress_dot.png` — used (stretched) to build the progress bar
 - `generate_assets.py` — a **dev-only fallback** for prototyping a
   placeholder text logo; the shipped `images/` are the real hand-designed
   assets, don't rerun this against them unless you mean to replace them
 
+**Animation timing** (all driven by `ease_out`/`ease_out_back` — no fixed
+frame sequence, computed live each frame from elapsed time, so it stays
+correct regardless of actual boot speed):
+- 0.0–1.0s: background fade-in
+- 0.5–1.6s: glow bloom
+- 0.9–2.3s: logo pop-in with overshoot (grows from 65% → ~110% peak → settles at 100%)
+- 2.1–3.0s: one light-sweep pass across the scene
+- 2.3s onward: glow settles into a continuous slow pulse
+
+**On the "find something online" idea:** there's no way to legally embed
+someone else's actual boot animation (copyrighted artwork/code), so
+instead this was built by researching real cinematic reveal techniques
+(overshoot/back-easing "pop" reveals, parallax depth layers, light-sweep
+passes) and implementing them from scratch against our own logo and the
+existing particle/glow assets — verified by hand-checking the easing
+math (see the interpreter-free numeric check that produced the 0 → ~1.10
+peak → 1.0 curve) before trusting it, since there's no local Plymouth
+script interpreter to test against directly.
+
 **To swap in a different logo:** replace `images/logo.png` and
 `images/logo_glow.png` (same dimensions/aspect ideally) — the script
 scales them to fit the screen automatically. If you also use the deluxe
 wallpaper, rerun `python3 config/wallpaper/generate_wallpaper.py`
-afterward so the wallpaper watermark matches.
+afterward so the wallpaper watermark matches, and
+`python3 config/branding/generate_icons.py` to refresh the menu/distributor
+icons too.
 
 **To preview without a full ISO build**, on a Linux machine with Plymouth
 installed:
