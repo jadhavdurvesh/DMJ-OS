@@ -299,6 +299,32 @@ default icons instead of ours):
   independently with a clear `OK:`/`FAIL:` line, so one failing never
   blocks the others and a future log will show exactly which component
   had trouble instead of a silent partial failure.
+- **`WhiteSur-gtk-theme`/`WhiteSur-icon-theme` install.sh both actually
+  failing** (confirmed from a real build log: `source: not found`,
+  `Syntax error: '(' unexpected`, `Illegal option -o pipefail`) — the
+  hook ran them with `sh install.sh`, but `sh` is `dash` on Debian and
+  WhiteSur's scripts use bash-specific syntax. Fixed by running `bash
+  install.sh` explicitly. `WhiteSur-cursors` happened to survive the
+  same issue and install anyway, which is why cursors alone showed up
+  correctly before this fix.
+- **Wallpaper/menu-icon files correctly built into the ISO, but not
+  actually applying at boot.** Confirmed from an actual 5-minute boot
+  video: the welcome dialog (also an autostart entry) displayed
+  correctly, proving the session fully started and autostart itself
+  works — but the wallpaper and menu icon scripts, which depend on
+  `xfdesktop`/`xfce4-panel` having finished initializing their xfconf
+  channels, likely lost a race against slower-to-start components under
+  non-KVM emulation (their original 10-second retry budget may simply
+  not have been enough). Hardened both scripts: they now wait for the
+  actual **process** (`pgrep xfdesktop` / `xfce4-panel`) rather than
+  just the xfconf channel being queryable, patiently retry for up to
+  60 seconds, force an immediate reload (`xfdesktop --reload` /
+  `xfce4-panel --restart`) once the property is set instead of waiting
+  on XFCE's own refresh cycle, and log every step to
+  `~/.cache/dmj-os/wallpaper.log` and `~/.cache/dmj-os/menu-icon.log`
+  — check those directly from a terminal on the live system (the dock
+  has one) if something still doesn't apply, rather than needing
+  another full round-trip through a build + boot video to diagnose it.
 
 ## History
 
