@@ -18,7 +18,7 @@ export DEBIAN_FRONTEND=noninteractive
 # ---------------------------------------------------------------------------
 OS_NAME="DMJ OS"
 OS_ID="dmjos"
-VERSION_CODENAME="Ashen"
+VERSION_CODENAME="Genesis"
 VERSION_NUMBER="1.0"
 BASE_SUITE="bookworm"
 ARCH="amd64"

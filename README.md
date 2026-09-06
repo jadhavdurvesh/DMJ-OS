@@ -336,7 +336,9 @@ to keep the build lean and focused on the base OS + boot experience.
 ## Versioning note
 
 "DMJ OS" is the fixed product name. `VERSION_CODENAME` in the build
-script is the separate release name — currently set to "Ashen".
+script is the separate release name — currently set to "Genesis" (the
+first public version name, in the tradition of "Windows Vista"-style
+release names rather than a bare version number).
 The base build is tagged `v1.0.0` in this repo; the deluxe build shares
 the same OS version (1.0) with a `-macos` suffix on the ISO filename,
 since it's an edition, not a separate release line.

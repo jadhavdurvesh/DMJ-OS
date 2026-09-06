@@ -6,7 +6,7 @@ on:
       version_codename:
         description: "Release codename"
         required: false
-        default: "Ashen"
+        default: "Genesis"
       variant:
         description: "Build variant"
         required: false
@@ -141,7 +141,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dmj-os-${{ inputs.version_codename || 'Ashen' }}${{ (inputs.variant == 'macos-deluxe' && '-macos') || '' }}-boot-preview
+          name: dmj-os-${{ inputs.version_codename || 'Genesis' }}${{ (inputs.variant == 'macos-deluxe' && '-macos') || '' }}-boot-preview
           path: |
             boot-preview/boot_video.mp4
             boot-preview/boot_video_boosted.mp4
@@ -152,7 +152,7 @@ jobs:
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dmj-os-${{ inputs.version_codename || 'Ashen' }}${{ (inputs.variant == 'macos-deluxe' && '-macos') || '' }}
+          name: dmj-os-${{ inputs.version_codename || 'Genesis' }}${{ (inputs.variant == 'macos-deluxe' && '-macos') || '' }}
           path: out/*.iso
           if-no-files-found: error
           retention-days: 14
