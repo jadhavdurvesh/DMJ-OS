@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+# The macOS-style build already enables Plank. Populate the default user's
+# dock with useful DMJ OS launchers while leaving the system free to add more.
+SKEL="/etc/skel/.config/plank/dock1/launchers"
+mkdir -p "$SKEL"
+
+write_launcher() {
+  file="$1"
+  desktop="$2"
+  if [ -f "$desktop" ]; then
+    cat > "$SKEL/$file" <<EOF
+[PlankDockItemPreferences]
+Launcher=$desktop
+EOF
+  fi
+}
+
+write_launcher "org.xfce.Thunar.dockitem" "/usr/share/applications/thunar.desktop"
+write_launcher "xfce4-terminal.dockitem" "/usr/share/applications/xfce4-terminal.desktop"
+write_launcher "firefox-esr.dockitem" "/usr/share/applications/firefox-esr.desktop"
+write_launcher "org.videolan.VLC.dockitem" "/usr/share/applications/vlc.desktop"
