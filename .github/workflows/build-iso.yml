@@ -56,6 +56,7 @@ jobs:
             xz-utils \
             gzip \
             ffmpeg
+          python3 -m pip install --break-system-packages --quiet pillow numpy
 
       - name: Install current Debian Live build tools
         run: |
@@ -78,6 +79,15 @@ jobs:
             "s/^VERSION_CODENAME=.*/VERSION_CODENAME=\"${{ github.event.inputs.version_codename }}\"/" \
             build/build-dmj-os.sh
 
+      - name: Generate DMJ visual assets
+        run: |
+          set -euxo pipefail
+          python3 config/branding/generate_icons.py
+          python3 config/wallpaper/generate_wallpaper.py
+          test -f config/branding/generated/distributor-logo.png
+          test -f config/branding/generated/hicolor/256x256/apps/start-here.png
+          test -f config/wallpaper/wallpaper.png
+
       - name: Run DMJ OS build
         env:
           BUILD_VARIANT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.variant || 'base' }}
@@ -85,12 +95,14 @@ jobs:
           set -euxo pipefail
           export PATH="/usr/local/bin:$PATH"
 
-          if [[ "$BUILD_VARIANT" == "macos-deluxe" ]]; then
-            export INCLUDE_MACOS_THEME=true
-            export INCLUDE_WALLPAPER=true
-            export INCLUDE_WELCOME_SCREEN=true
-            export INCLUDE_DESKTOP_APPS=true
-          fi
+          # The standard DMJ OS image is now the fully branded desktop.
+          # macos-deluxe remains available as an explicit compatibility alias.
+          export INCLUDE_PLYMOUTH_THEME=true
+          export INCLUDE_SYSTEM_BRANDING=true
+          export INCLUDE_MACOS_THEME=true
+          export INCLUDE_WALLPAPER=true
+          export INCLUDE_WELCOME_SCREEN=true
+          export INCLUDE_DESKTOP_APPS=true
 
           echo "Checking build directory..."
           ls -la ./build/
@@ -100,12 +112,12 @@ jobs:
           chmod +x ./build/build-dmj-os.sh
           sudo env \
             PATH="$PATH" \
-            INCLUDE_PLYMOUTH_THEME="${INCLUDE_PLYMOUTH_THEME:-true}" \
-            INCLUDE_SYSTEM_BRANDING="${INCLUDE_SYSTEM_BRANDING:-true}" \
-            INCLUDE_MACOS_THEME="${INCLUDE_MACOS_THEME:-false}" \
-            INCLUDE_WALLPAPER="${INCLUDE_WALLPAPER:-false}" \
-            INCLUDE_WELCOME_SCREEN="${INCLUDE_WELCOME_SCREEN:-true}" \
-            INCLUDE_DESKTOP_APPS="${INCLUDE_DESKTOP_APPS:-false}" \
+            INCLUDE_PLYMOUTH_THEME=true \
+            INCLUDE_SYSTEM_BRANDING=true \
+            INCLUDE_MACOS_THEME=true \
+            INCLUDE_WALLPAPER=true \
+            INCLUDE_WELCOME_SCREEN=true \
+            INCLUDE_DESKTOP_APPS=true \
             bash ./build/build-dmj-os.sh
 
       - name: Check ISO output
@@ -119,12 +131,6 @@ jobs:
           fi
 
       - name: Capture graphical boot video + screenshots
-        # Use a real virtual X display so QEMU exercises its graphical
-        # framebuffer/display path. The previous -display none setup could
-        # produce a technically valid screendump while not faithfully
-        # representing what a user sees during GRUB/Plymouth/XFCE startup.
-        # Everything remains inside GitHub Actions; no local machine is
-        # involved. The capture step is non-blocking for ISO publication.
         continue-on-error: true
         run: |
           set -euxo pipefail
@@ -140,16 +146,13 @@ jobs:
           trap 'kill "$XVFB_PID" 2>/dev/null || true' EXIT
           sleep 2
 
-          # 120 seconds sampled every second. The one-second cadence is
-          # deliberate: the DMJ Cinematic logo reveal happens in the first
-          # few seconds and a three-second cadence can skip it entirely.
           python3 tools/qemu-preview/capture_boot_screenshots.py "$ISO_FILE" boot-preview 120 1
 
       - name: Upload boot video + screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dmj-os-${{ inputs.version_codename || 'Genesis' }}${{ (inputs.variant == 'macos-deluxe' && '-macos') || '' }}-boot-preview
+          name: dmj-os-${{ inputs.version_codename || 'Genesis' }}-boot-preview
           path: |
             boot-preview/boot_video.mp4
             boot-preview/boot_video_boosted.mp4
@@ -160,7 +163,7 @@ jobs:
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dmj-os-${{ inputs.version_codename || 'Genesis' }}${{ (inputs.variant == 'macos-deluxe' && '-macos') || '' }}
+          name: dmj-os-${{ inputs.version_codename || 'Genesis' }}
           path: out/*.iso
           if-no-files-found: error
           retention-days: 14
