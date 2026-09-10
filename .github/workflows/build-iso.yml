@@ -140,7 +140,10 @@ jobs:
           trap 'kill "$XVFB_PID" 2>/dev/null || true' EXIT
           sleep 2
 
-          python3 tools/qemu-preview/capture_boot_screenshots.py "$ISO_FILE" boot-preview 240 3
+          # 120 seconds sampled every second. The one-second cadence is
+          # deliberate: the DMJ Cinematic logo reveal happens in the first
+          # few seconds and a three-second cadence can skip it entirely.
+          python3 tools/qemu-preview/capture_boot_screenshots.py "$ISO_FILE" boot-preview 120 1
 
       - name: Upload boot video + screenshots
         if: always()
